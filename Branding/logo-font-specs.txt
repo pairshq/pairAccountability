@@ -1,0 +1,42 @@
+LOGO FONT SPECIFICATIONS FOR CANVA
+====================================
+
+Original Font Stack:
+- system-ui, -apple-system, sans-serif
+- On macOS: San Francisco (SF Pro)
+
+Canva Alternatives (in order of similarity):
+1. Inter (BEST MATCH - modern, clean, similar to San Francisco)
+2. Helvetica Neue
+3. Arial
+4. Proxima Nova
+
+Typography Settings:
+-------------------
+Font Weight: Regular (400)
+Letter Spacing: -0.5px (slightly tighter/condensed)
+Font Size: 32px (for horizontal logo)
+Font Style: Normal (no italic/bold)
+
+Color Specifications:
+--------------------
+Text Color (on white background): #1E293B
+Text Color (on dark background): #FFFFFF
+Background Color (dark): #1E293B
+
+Logo Dimensions:
+---------------
+Icon: 100x100 viewBox
+Horizontal Logo: Icon + "pair" text side by side
+Stacked Logo: Icon above "pair" text
+
+Icon Details:
+------------
+- "P" shape with CIRCULAR/ROUNDED top (not sharp corners)
+- The top part forms a smooth circular curve using quadratic bezier curves
+- Vertical stem on the left
+- Two dots below (at y=68, x=42 and x=52)
+- Stroke width: 3.5
+- Rounded line caps and joins
+- The circular top goes from x=25 to x=65, with curves at y=20, 35, and 50
+

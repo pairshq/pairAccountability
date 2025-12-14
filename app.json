@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "PairAccountability",
+    "slug": "pair-accountability",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/branding/logo-white-bg.png",
+    "scheme": "pair",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/branding/logo-white-bg.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pair.accountability"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/logo-white-bg.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.pair.accountability"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/branding/logo-white-bg.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/branding/logo-white-bg.png",
+          "color": "#FAB300"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

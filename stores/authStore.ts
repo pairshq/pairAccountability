@@ -1,0 +1,152 @@
+import { create } from "zustand";
+import { supabase } from "@/lib/supabase";
+import type { Profile } from "@/types";
+
+interface AuthState {
+  user: { id: string; email: string } | null;
+  profile: Profile | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  
+  // Actions
+  initialize: () => Promise<void>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, username: string) => Promise<{ error: string | null }>;
+  signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<{ error: string | null }>;
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
+  profile: null,
+  isLoading: true,
+  isAuthenticated: false,
+
+  initialize: async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .single();
+
+        set({
+          user: { id: session.user.id, email: session.user.email! },
+          profile,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+      } else {
+        set({ isLoading: false });
+      }
+
+      // Listen for auth changes
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === "SIGNED_IN" && session?.user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", session.user.id)
+            .single();
+
+          set({
+            user: { id: session.user.id, email: session.user.email! },
+            profile,
+            isAuthenticated: true,
+          });
+        } else if (event === "SIGNED_OUT") {
+          set({
+            user: null,
+            profile: null,
+            isAuthenticated: false,
+          });
+        }
+      });
+    } catch (error) {
+      console.error("Auth initialization error:", error);
+      set({ isLoading: false });
+    }
+  },
+
+  signIn: async (email, password) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) {
+      return { error: error.message };
+    }
+    
+    return { error: null };
+  },
+
+  signUp: async (email, password, username) => {
+    // Check if username is taken
+    const { data: existingUser } = await supabase
+      .from("profiles")
+      .select("username")
+      .eq("username", username.toLowerCase())
+      .single();
+
+    if (existingUser) {
+      return { error: "Username is already taken" };
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    if (data.user) {
+      // Create profile
+      const { error: profileError } = await supabase.from("profiles").insert({
+        id: data.user.id,
+        username: username.toLowerCase(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+
+      if (profileError) {
+        return { error: profileError.message };
+      }
+    }
+
+    return { error: null };
+  },
+
+  signOut: async () => {
+    await supabase.auth.signOut();
+  },
+
+  updateProfile: async (updates) => {
+    const { user } = get();
+    if (!user) return { error: "Not authenticated" };
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", user.id);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Refresh profile
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    set({ profile });
+    return { error: null };
+  },
+}));
+
