@@ -44,9 +44,8 @@ yarn-error.*
 secrets/
 credentials/
 
-# Supabase
-supabase/.env
-supabase/.env.local
+# Supabase - Keep database schema private
+supabase/
 
 # typescript
 *.tsbuildinfo
