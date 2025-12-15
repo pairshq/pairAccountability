@@ -59,7 +59,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#FFFFFF",
     marginBottom: 8,
-    fontFamily: "Inter",
   },
   inputContainer: {
     flexDirection: "row",
@@ -75,7 +74,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: "#FFFFFF",
-    fontFamily: "Inter",
     outlineStyle: "none",
     outlineWidth: 0,
   },
@@ -87,7 +85,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#E74C3C",
     marginTop: 6,
-    fontFamily: "Inter",
   },
 });
 

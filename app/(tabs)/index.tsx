@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -20,21 +20,60 @@ import {
   TrendingUp,
   Plus,
   ChevronRight,
+  X,
 } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoalItem } from "@/components/ui";
 import { useAuthStore } from "@/stores/authStore";
 import { useGoalStore } from "@/stores/goalStore";
+import { useResponsive } from "@/hooks/useResponsive";
+import { useColors } from "@/lib/useColorScheme";
+
+const WELCOME_BANNER_KEY = "@pair_welcome_banner_dismissed";
+
+// Get time-based greeting
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  return "Good Evening";
+};
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const colors = useColors();
   const { user, profile } = useAuthStore();
   const { todayGoals, isLoading, fetchTodayGoals } = useGoalStore();
+  const { isDesktop } = useResponsive();
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
 
   useEffect(() => {
     if (user) {
       fetchTodayGoals(user.id);
     }
+    // Check if welcome banner was dismissed
+    checkWelcomeBanner();
   }, [user]);
+
+  const checkWelcomeBanner = async () => {
+    try {
+      const dismissed = await AsyncStorage.getItem(WELCOME_BANNER_KEY);
+      if (dismissed !== "true") {
+        setShowWelcomeBanner(true);
+      }
+    } catch (error) {
+      console.error("Error checking welcome banner:", error);
+    }
+  };
+
+  const dismissWelcomeBanner = async () => {
+    try {
+      await AsyncStorage.setItem(WELCOME_BANNER_KEY, "true");
+      setShowWelcomeBanner(false);
+    } catch (error) {
+      console.error("Error dismissing welcome banner:", error);
+    }
+  };
 
   const handleRefresh = () => {
     if (user) {
@@ -48,54 +87,51 @@ export default function DashboardScreen() {
   const totalCount = todayGoals.length;
   const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  // Get greeting based on time of day
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
-  };
-
   const displayName = profile?.full_name || profile?.username || "User";
+  const firstName = displayName.split(" ")[0];
+  const greeting = getGreeting();
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.appName}>Pair Accountability</Text>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Bell size={20} color="#000000" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => router.push("/(tabs)/profile")}
-          >
-            <View style={styles.avatar}>
-              <User size={18} color="#000000" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Top Header - Desktop Only */}
+      {isDesktop && (
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <View style={styles.headerLeft}>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Dashboard</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <View style={[styles.searchContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Search size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search information"
+                placeholderTextColor={colors.textSecondary}
+              />
             </View>
-            <Text style={styles.profileName}>{displayName.split(" ")[0]}</Text>
-            <ChevronRight size={16} color="#6B6B6B" />
-          </TouchableOpacity>
+            <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Bell size={20} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.profileButton, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
+              onPress={() => router.push("/(tabs)/profile")}
+            >
+              <View style={[styles.avatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E0E0E0" }]}>
+                <User size={18} color={colors.text} />
+              </View>
+              <Text style={[styles.profileName, { color: colors.text }]}>{displayName.split(" ")[0]}</Text>
+              <ChevronRight size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Search size={18} color="#6B6B6B" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search information"
-          placeholderTextColor="#6B6B6B"
-        />
-      </View>
+      )}
 
       {/* Main Content */}
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -105,173 +141,343 @@ export default function DashboardScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Welcome Banner */}
-        <View style={styles.welcomeBanner}>
-          <View style={styles.welcomeContent}>
-            <Text style={styles.welcomeTitle}>Welcome to Pair Accountability</Text>
-            <Text style={styles.welcomeSubtitle}>
-              The best place for accountability partners
-            </Text>
-            <TouchableOpacity style={styles.learnMoreButton}>
-              <Text style={styles.learnMoreText}>Learn More</Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.closeBanner}>
-            <Text style={styles.closeBannerText}>×</Text>
-          </TouchableOpacity>
+        {/* Greeting */}
+        <View style={styles.greetingSection}>
+          <Text style={[styles.greetingText, { color: colors.text }]}>
+            {greeting}, {firstName}! 👋
+          </Text>
+          <Text style={[styles.greetingSubtext, { color: colors.textSecondary }]}>
+            Here's what's on your plate today
+          </Text>
         </View>
 
-        {/* Dashboard Title */}
-        <View style={styles.dashboardHeader}>
-          <Text style={styles.dashboardTitle}>Dashboard</Text>
-          <TouchableOpacity style={styles.printButton}>
-            <Text style={styles.printText}>Print</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Statistics Cards */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: "#E8F5E9" }]}>
-              <CheckCircle2 size={24} color="#2ECC71" />
-            </View>
-            <Text style={styles.statValue}>{completedCount}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: "#FFF3E0" }]}>
-              <Clock size={24} color="#FAB300" />
-            </View>
-            <Text style={styles.statValue}>{totalCount - completedCount}</Text>
-            <Text style={styles.statLabel}>Pending</Text>
-          </View>
-          <View style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: "#E3F2FD" }]}>
-              <TrendingUp size={24} color="#4285F4" />
-            </View>
-            <Text style={styles.statValue}>{completionRate}%</Text>
-            <Text style={styles.statLabel}>Progress</Text>
-          </View>
-        </View>
-
-        {/* User Profile Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>User Profile</Text>
-          <View style={styles.profileCardContent}>
-            <View style={styles.profileAvatar}>
-              <User size={32} color="#6B6B6B" />
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileInfoText}>
-                <Text style={styles.profileInfoLabel}>Name: </Text>
-                {displayName}
+        {/* Welcome Banner - Only for new users */}
+        {showWelcomeBanner && (
+          <View style={styles.welcomeBanner}>
+            <View style={styles.welcomeContent}>
+              <Text style={styles.welcomeTitle}>Welcome to Pair Accountability</Text>
+              <Text style={styles.welcomeSubtitle}>
+                The best place for accountability partners
               </Text>
-              <Text style={styles.profileInfoText}>
-                <Text style={styles.profileInfoLabel}>Date of Joining: </Text>
-                {profile?.created_at
-                  ? new Date(profile.created_at).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })
-                  : "N/A"}
-              </Text>
-              <Text style={styles.profileInfoText}>
-                <Text style={styles.profileInfoLabel}>Username: </Text>
-                {profile?.username || "N/A"}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Today's Goals Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Today's Goals</Text>
-            <TouchableOpacity
-              onPress={() => router.push("/create-goal")}
-              style={styles.addGoalButton}
-            >
-              <Plus size={18} color="#FFFFFF" />
-              <Text style={styles.addGoalText}>Add Goal</Text>
-            </TouchableOpacity>
-          </View>
-
-          {todayGoals.length > 0 ? (
-            <View style={styles.goalsList}>
-              {todayGoals.map((goal, index) => (
-                <View key={goal.id}>
-                  <GoalItem
-                    goal={goal}
-                    onPress={() => router.push(`/goal/${goal.id}`)}
-                  />
-                  {index < todayGoals.length - 1 && (
-                    <View style={styles.goalDivider} />
-                  )}
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyGoals}>
-              <View style={styles.emptyIcon}>
-                <Target size={32} color="#6B6B6B" />
-              </View>
-              <Text style={styles.emptyTitle}>No goals for today</Text>
-              <Text style={styles.emptyText}>
-                Create your first goal to get started
-              </Text>
-              <TouchableOpacity
-                onPress={() => router.push("/create-goal")}
-                style={styles.emptyButton}
-              >
-                <Text style={styles.emptyButtonText}>Create Goal</Text>
+              <TouchableOpacity style={styles.learnMoreButton}>
+                <Text style={styles.learnMoreText}>Learn More</Text>
               </TouchableOpacity>
             </View>
-          )}
-        </View>
-
-        {/* Recent Activity Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Recent Check-ins</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>See All</Text>
+            <TouchableOpacity style={styles.closeBanner} onPress={dismissWelcomeBanner}>
+              <X size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
-          <View style={styles.activityList}>
-            {todayGoals
-              .filter((g) => g.today_check_in)
-              .slice(0, 3)
-              .map((goal) => (
-                <View key={goal.id} style={styles.activityItem}>
-                  <View style={styles.activityIcon}>
-                    <CheckCircle2
-                      size={16}
-                      color={
-                        goal.today_check_in?.status === "completed"
-                          ? "#2ECC71"
-                          : "#E74C3C"
-                      }
-                    />
+        )}
+
+        {/* Dashboard Title - Mobile Only */}
+        {!isDesktop && (
+          <View style={styles.dashboardHeader}>
+            <Text style={[styles.dashboardTitle, { color: colors.text }]}>Dashboard</Text>
+            <TouchableOpacity style={styles.printButton}>
+              <Text style={[styles.printText, { color: colors.textSecondary }]}>Print</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Multi-Column Grid for Desktop */}
+        {isDesktop ? (
+          <View style={styles.gridContainer}>
+            {/* Left Column */}
+            <View style={styles.leftColumn}>
+              {/* Statistics Cards */}
+              <View style={styles.statsRow}>
+                <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#1B3D1B" : "#E8F5E9" }]}>
+                    <CheckCircle2 size={24} color="#2ECC71" />
                   </View>
-                  <View style={styles.activityContent}>
-                    <Text style={styles.activityTitle}>{goal.title}</Text>
-                    <Text style={styles.activityTime}>
-                      {goal.today_check_in?.status === "completed"
-                        ? "Completed"
-                        : "Missed"}{" "}
-                      • {new Date().toLocaleDateString()}
+                  <Text style={[styles.statValue, { color: colors.text }]}>{completedCount}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Completed</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#3D3520" : "#FFF3E0" }]}>
+                    <Clock size={24} color="#FAB300" />
+                  </View>
+                  <Text style={[styles.statValue, { color: colors.text }]}>{totalCount - completedCount}</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pending</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#1B2D3D" : "#E3F2FD" }]}>
+                    <TrendingUp size={24} color="#4285F4" />
+                  </View>
+                  <Text style={[styles.statValue, { color: colors.text }]}>{completionRate}%</Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Progress</Text>
+                </View>
+              </View>
+
+              {/* User Profile Card */}
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>User Profile</Text>
+                <View style={styles.profileCardContent}>
+                  <View style={[styles.profileAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
+                    <User size={32} color={colors.textSecondary} />
+                  </View>
+                  <View style={styles.profileInfo}>
+                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Name: </Text>
+                      {displayName}
+                    </Text>
+                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Date of Joining: </Text>
+                      {profile?.created_at
+                        ? new Date(profile.created_at).toLocaleDateString("en-US", {
+                            month: "long",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        : "N/A"}
+                    </Text>
+                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Username: </Text>
+                      {profile?.username || "N/A"}
                     </Text>
                   </View>
                 </View>
-              ))}
-            {todayGoals.filter((g) => g.today_check_in).length === 0 && (
-              <Text style={styles.noActivityText}>No recent check-ins</Text>
-            )}
+              </View>
+            </View>
+
+            {/* Right Column */}
+            <View style={styles.rightColumn}>
+              {/* Today's Goals Card */}
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.cardHeader}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>Today's Goals</Text>
+                  <TouchableOpacity
+                    onPress={() => router.push("/create-goal")}
+                    style={styles.addGoalButton}
+                  >
+                    <Plus size={18} color="#FFFFFF" />
+                    <Text style={styles.addGoalText}>Add Goal</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {todayGoals.length > 0 ? (
+                  <View style={styles.goalsList}>
+                    {todayGoals.map((goal, index) => (
+                      <View key={goal.id}>
+                        <GoalItem
+                          goal={goal}
+                          onPress={() => router.push(`/goal/${goal.id}`)}
+                        />
+                        {index < todayGoals.length - 1 && (
+                          <View style={[styles.goalDivider, { backgroundColor: colors.border }]} />
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.emptyGoals}>
+                    <View style={[styles.emptyIcon, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
+                      <Target size={32} color={colors.textSecondary} />
+                    </View>
+                    <Text style={[styles.emptyTitle, { color: colors.text }]}>No goals for today</Text>
+                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                      Create your first goal to get started
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => router.push("/create-goal")}
+                      style={styles.emptyButton}
+                    >
+                      <Text style={styles.emptyButtonText}>Create Goal</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Recent Activity Card */}
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.cardHeader}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Check-ins</Text>
+                  <TouchableOpacity>
+                    <Text style={styles.seeAllText}>See All</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.activityList}>
+                  {todayGoals
+                    .filter((g) => g.today_check_in)
+                    .slice(0, 3)
+                    .map((goal) => (
+                      <View key={goal.id} style={styles.activityItem}>
+                        <View style={styles.activityIcon}>
+                          <CheckCircle2
+                            size={16}
+                            color={
+                              goal.today_check_in?.status === "completed"
+                                ? "#2ECC71"
+                                : "#E74C3C"
+                            }
+                          />
+                        </View>
+                        <View style={styles.activityContent}>
+                          <Text style={[styles.activityTitle, { color: colors.text }]}>{goal.title}</Text>
+                          <Text style={[styles.activityTime, { color: colors.textSecondary }]}>
+                            {goal.today_check_in?.status === "completed"
+                              ? "Completed"
+                              : "Missed"}{" "}
+                            • {new Date().toLocaleDateString()}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  {todayGoals.filter((g) => g.today_check_in).length === 0 && (
+                    <Text style={[styles.noActivityText, { color: colors.textSecondary }]}>No recent check-ins</Text>
+                  )}
+                </View>
+              </View>
+            </View>
           </View>
-        </View>
+        ) : (
+          /* Single Column for Mobile */
+          <>
+            {/* Statistics Cards */}
+            <View style={styles.statsRow}>
+              <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#1B3D1B" : "#E8F5E9" }]}>
+                  <CheckCircle2 size={24} color="#2ECC71" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{completedCount}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Completed</Text>
+              </View>
+              <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#3D3520" : "#FFF3E0" }]}>
+                  <Clock size={24} color="#FAB300" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{totalCount - completedCount}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pending</Text>
+              </View>
+              <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.statIcon, { backgroundColor: colors.isDark ? "#1B2D3D" : "#E3F2FD" }]}>
+                  <TrendingUp size={24} color="#4285F4" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{completionRate}%</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Progress</Text>
+              </View>
+            </View>
+
+            {/* User Profile Card */}
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>User Profile</Text>
+              <View style={styles.profileCardContent}>
+                <View style={[styles.profileAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
+                  <User size={32} color={colors.textSecondary} />
+                </View>
+                <View style={styles.profileInfo}>
+                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Name: </Text>
+                    {displayName}
+                  </Text>
+                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Date of Joining: </Text>
+                    {profile?.created_at
+                      ? new Date(profile.created_at).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })
+                      : "N/A"}
+                  </Text>
+                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
+                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Username: </Text>
+                    {profile?.username || "N/A"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Today's Goals Card */}
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.cardHeader}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Today's Goals</Text>
+                <TouchableOpacity
+                  onPress={() => router.push("/create-goal")}
+                  style={styles.addGoalButton}
+                >
+                  <Plus size={18} color="#FFFFFF" />
+                  <Text style={styles.addGoalText}>Add Goal</Text>
+                </TouchableOpacity>
+              </View>
+
+              {todayGoals.length > 0 ? (
+                <View style={styles.goalsList}>
+                  {todayGoals.map((goal, index) => (
+                    <View key={goal.id}>
+                      <GoalItem
+                        goal={goal}
+                        onPress={() => router.push(`/goal/${goal.id}`)}
+                      />
+                      {index < todayGoals.length - 1 && (
+                        <View style={[styles.goalDivider, { backgroundColor: colors.border }]} />
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.emptyGoals}>
+                  <View style={[styles.emptyIcon, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
+                    <Target size={32} color={colors.textSecondary} />
+                  </View>
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>No goals for today</Text>
+                  <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                    Create your first goal to get started
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push("/create-goal")}
+                    style={styles.emptyButton}
+                  >
+                    <Text style={styles.emptyButtonText}>Create Goal</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Recent Activity Card */}
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.cardHeader}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Check-ins</Text>
+                <TouchableOpacity>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.activityList}>
+                {todayGoals
+                  .filter((g) => g.today_check_in)
+                  .slice(0, 3)
+                  .map((goal) => (
+                    <View key={goal.id} style={styles.activityItem}>
+                      <View style={styles.activityIcon}>
+                        <CheckCircle2
+                          size={16}
+                          color={
+                            goal.today_check_in?.status === "completed"
+                              ? "#2ECC71"
+                              : "#E74C3C"
+                          }
+                        />
+                      </View>
+                      <View style={styles.activityContent}>
+                        <Text style={[styles.activityTitle, { color: colors.text }]}>{goal.title}</Text>
+                        <Text style={[styles.activityTime, { color: colors.textSecondary }]}>
+                          {goal.today_check_in?.status === "completed"
+                            ? "Completed"
+                            : "Missed"}{" "}
+                          • {new Date().toLocaleDateString()}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                {todayGoals.filter((g) => g.today_check_in).length === 0 && (
+                  <Text style={[styles.noActivityText, { color: colors.textSecondary }]}>No recent check-ins</Text>
+                )}
+              </View>
+            </View>
+          </>
+        )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -284,23 +490,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EAEAEA",
   },
   headerLeft: {
     flex: 1,
   },
-  appName: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 24,
     fontWeight: "700",
     color: "#000000",
-    fontFamily: "Inter",
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 16,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     gap: 12,
+    minWidth: 300,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: "#000000",
   },
   iconButton: {
     width: 40,
@@ -331,24 +552,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: "#000000",
-    fontFamily: "Inter",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5F5F5",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 24,
-    marginBottom: 16,
-    gap: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: "#000000",
-    fontFamily: "Inter",
   },
   content: {
     flex: 1,
@@ -356,6 +559,22 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 24,
     paddingBottom: 24,
+    paddingTop: 24,
+  },
+  scrollContentDesktop: {
+    paddingHorizontal: 32,
+    paddingTop: 32,
+  },
+  greetingSection: {
+    marginBottom: 24,
+  },
+  greetingText: {
+    fontSize: 28,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  greetingSubtext: {
+    fontSize: 15,
   },
   welcomeBanner: {
     backgroundColor: "#1A1A2E",
@@ -373,13 +592,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#FFFFFF",
     marginBottom: 8,
-    fontFamily: "Inter",
   },
   welcomeSubtitle: {
     fontSize: 15,
     color: "#A0A0A0",
     marginBottom: 16,
-    fontFamily: "Inter",
   },
   learnMoreButton: {
     alignSelf: "flex-start",
@@ -392,21 +609,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#1A1A2E",
-    fontFamily: "Inter",
   },
   closeBanner: {
     position: "absolute",
     top: 12,
     right: 12,
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
+    zIndex: 10,
+    alignItems: "center",
+    justifyContent: "center",
     alignItems: "center",
     justifyContent: "center",
   },
   closeBannerText: {
     fontSize: 24,
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   dashboardHeader: {
     flexDirection: "row",
@@ -418,7 +636,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "700",
     color: "#000000",
-    fontFamily: "Inter",
   },
   printButton: {
     paddingHorizontal: 12,
@@ -427,7 +644,20 @@ const styles = StyleSheet.create({
   printText: {
     fontSize: 14,
     color: "#6B6B6B",
-    fontFamily: "Inter",
+  },
+  // Desktop Grid Layout
+  gridContainer: {
+    flexDirection: "row",
+    gap: 24,
+    alignItems: "flex-start",
+  },
+  leftColumn: {
+    flex: 1,
+    gap: 24,
+  },
+  rightColumn: {
+    flex: 1,
+    gap: 24,
   },
   statsRow: {
     flexDirection: "row",
@@ -456,18 +686,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#000000",
     marginBottom: 4,
-    fontFamily: "Inter",
   },
   statLabel: {
     fontSize: 12,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   card: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 20,
-    marginBottom: 20,
     borderWidth: 1,
     borderColor: "#EAEAEA",
     shadowColor: "#000",
@@ -487,7 +714,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#000000",
     marginBottom: 16,
-    fontFamily: "Inter",
   },
   profileCardContent: {
     flexDirection: "row",
@@ -508,7 +734,6 @@ const styles = StyleSheet.create({
   profileInfoText: {
     fontSize: 14,
     color: "#000000",
-    fontFamily: "Inter",
     lineHeight: 20,
   },
   profileInfoLabel: {
@@ -528,7 +753,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   goalsList: {
     gap: 0,
@@ -557,13 +781,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#000000",
     marginBottom: 8,
-    fontFamily: "Inter",
   },
   emptyText: {
     fontSize: 14,
     color: "#6B6B6B",
     marginBottom: 20,
-    fontFamily: "Inter",
   },
   emptyButton: {
     backgroundColor: "#FAB300",
@@ -575,13 +797,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   seeAllText: {
     fontSize: 14,
     color: "#FAB300",
     fontWeight: "500",
-    fontFamily: "Inter",
   },
   activityList: {
     gap: 12,
@@ -607,18 +827,15 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#000000",
     marginBottom: 4,
-    fontFamily: "Inter",
   },
   activityTime: {
     fontSize: 12,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   noActivityText: {
     fontSize: 14,
     color: "#6B6B6B",
     textAlign: "center",
     paddingVertical: 20,
-    fontFamily: "Inter",
   },
 });

@@ -71,7 +71,6 @@ const styles = StyleSheet.create({
   },
   initials: {
     fontWeight: "600",
-    fontFamily: "Inter",
   },
 });
 

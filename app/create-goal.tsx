@@ -6,16 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  TextInput,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
-import { Check } from "lucide-react-native";
-import { Button, Input } from "@/components/ui";
+import { Check, X, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGoalStore } from "@/stores/goalStore";
 import { Categories, Frequencies, AccountabilityTypes } from "@/lib/constants";
 
 type Step = "title" | "category" | "frequency" | "accountability";
+
+const steps: Step[] = ["title", "category", "frequency", "accountability"];
 
 export default function CreateGoalScreen() {
   const colors = useColors();
@@ -30,6 +32,8 @@ export default function CreateGoalScreen() {
   const [frequency, setFrequency] = useState<string>("");
   const [accountabilityType, setAccountabilityType] = useState<string>("self");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const currentStepIndex = steps.indexOf(step);
 
   const handleNext = () => {
     if (step === "title" && title.trim()) {
@@ -81,193 +85,260 @@ export default function CreateGoalScreen() {
     return false;
   };
 
-  const SelectOption = ({
-    label,
-    description,
-    selected,
-    onPress,
-  }: {
-    label: string;
-    description?: string;
-    selected: boolean;
-    onPress: () => void;
-  }) => (
-    <TouchableOpacity
-      style={[
-        styles.option,
-        {
-          borderColor: selected ? colors.accent : colors.border,
-          backgroundColor: selected
-            ? colors.isDark
-              ? "#1A1A0A"
-              : "#FFFBEB"
-            : colors.card,
-        },
-      ]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.optionContent}>
-        <Text style={[styles.optionLabel, { color: colors.text }]}>{label}</Text>
-        {description && (
-          <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
-            {description}
-          </Text>
-        )}
-      </View>
-      {selected && (
-        <View style={[styles.checkCircle, { backgroundColor: colors.accent }]}>
-          <Check size={14} color="#000000" strokeWidth={3} />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
   return (
     <>
       <Stack.Screen
         options={{
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()}>
-              <Text style={[styles.cancelButton, { color: colors.textSecondary }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          ),
+          headerShown: false,
         }}
       />
-      <ScrollView
-        style={[styles.container, { backgroundColor: colors.background }]}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Progress Indicator */}
-        <View style={styles.progressContainer}>
-          {["title", "category", "frequency", "accountability"].map((s, i) => (
-            <View
-              key={s}
-              style={[
-                styles.progressDot,
-                {
-                  backgroundColor:
-                    step === s
-                      ? colors.accent
-                      : ["title", "category", "frequency", "accountability"].indexOf(step) > i
-                      ? colors.accent
-                      : colors.border,
-                },
-              ]}
-            />
-          ))}
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+            <X size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>New Goal</Text>
+          <View style={styles.headerRight} />
         </View>
 
-        {/* Step Content */}
-        {step === "title" && (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>
-              What's your goal?
-            </Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              Write a clear, specific goal
-            </Text>
-            <Input
-              placeholder="e.g., Exercise for 30 minutes"
-              value={title}
-              onChangeText={setTitle}
-              autoFocus
-            />
-            <Input
-              label="Description (optional)"
-              placeholder="Add more details..."
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={3}
+        {/* Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={[styles.progressTrack, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F0F0F0" }]}>
+            <View 
+              style={[
+                styles.progressFill, 
+                { width: `${((currentStepIndex + 1) / steps.length) * 100}%` }
+              ]} 
             />
           </View>
-        )}
+          <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+            Step {currentStepIndex + 1} of {steps.length}
+          </Text>
+        </View>
 
-        {step === "category" && (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>
-              Choose a category
-            </Text>
-            <View style={styles.optionsGrid}>
-              {Categories.map((cat) => (
-                <SelectOption
-                  key={cat.id}
-                  label={cat.label}
-                  selected={category === cat.id}
-                  onPress={() => setCategory(cat.id)}
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Step Content */}
+          {step === "title" && (
+            <View style={styles.stepContent}>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                What's your goal?
+              </Text>
+              <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                Write a clear, specific goal you want to achieve
+              </Text>
+              
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Goal Title</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    { 
+                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      color: colors.text,
+                    }
+                  ]}
+                  placeholder="e.g., Exercise for 30 minutes"
+                  placeholderTextColor={colors.textSecondary}
+                  value={title}
+                  onChangeText={setTitle}
+                  autoFocus
                 />
-              ))}
-            </View>
-          </View>
-        )}
+              </View>
 
-        {step === "frequency" && (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>
-              How often?
-            </Text>
-            <View style={styles.optionsList}>
-              {Frequencies.map((freq) => (
-                <SelectOption
-                  key={freq.id}
-                  label={freq.label}
-                  selected={frequency === freq.id}
-                  onPress={() => setFrequency(freq.id)}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.textArea,
+                    { 
+                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      color: colors.text,
+                    }
+                  ]}
+                  placeholder="Add more details about your goal..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={description}
+                  onChangeText={setDescription}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
                 />
-              ))}
+              </View>
             </View>
-          </View>
-        )}
-
-        {step === "accountability" && (
-          <View style={styles.stepContent}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>
-              Accountability type
-            </Text>
-            <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
-              How do you want to stay accountable?
-            </Text>
-            <View style={styles.optionsList}>
-              {AccountabilityTypes.map((type) => (
-                <SelectOption
-                  key={type.id}
-                  label={type.label}
-                  description={type.description}
-                  selected={accountabilityType === type.id}
-                  onPress={() => setAccountabilityType(type.id)}
-                />
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Navigation */}
-        <View style={styles.navigation}>
-          {step !== "title" && (
-            <Button variant="secondary" onPress={handleBack}>
-              Back
-            </Button>
           )}
-          <View style={{ flex: 1 }} />
+
+          {step === "category" && (
+            <View style={styles.stepContent}>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                Choose a category
+              </Text>
+              <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                This helps organize your goals
+              </Text>
+              
+              <View style={styles.optionsGrid}>
+                {Categories.map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    style={[
+                      styles.optionCard,
+                      {
+                        borderColor: category === cat.id ? "#FAB300" : colors.border,
+                        backgroundColor: category === cat.id
+                          ? colors.isDark ? "#1A1A0A" : "#FFFBEB"
+                          : colors.card,
+                      },
+                    ]}
+                    onPress={() => setCategory(cat.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionLabel, { color: colors.text }]}>
+                      {cat.label}
+                    </Text>
+                    {category === cat.id && (
+                      <View style={styles.checkBadge}>
+                        <Check size={14} color="#000000" strokeWidth={3} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {step === "frequency" && (
+            <View style={styles.stepContent}>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                How often?
+              </Text>
+              <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                Set your check-in frequency
+              </Text>
+              
+              <View style={styles.optionsList}>
+                {Frequencies.map((freq) => (
+                  <TouchableOpacity
+                    key={freq.id}
+                    style={[
+                      styles.optionRow,
+                      {
+                        borderColor: frequency === freq.id ? "#FAB300" : colors.border,
+                        backgroundColor: frequency === freq.id
+                          ? colors.isDark ? "#1A1A0A" : "#FFFBEB"
+                          : colors.card,
+                      },
+                    ]}
+                    onPress={() => setFrequency(freq.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.optionLabel, { color: colors.text }]}>
+                      {freq.label}
+                    </Text>
+                    {frequency === freq.id && (
+                      <View style={styles.checkBadge}>
+                        <Check size={14} color="#000000" strokeWidth={3} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {step === "accountability" && (
+            <View style={styles.stepContent}>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                Accountability type
+              </Text>
+              <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                How do you want to stay accountable?
+              </Text>
+              
+              <View style={styles.optionsList}>
+                {AccountabilityTypes.map((type) => (
+                  <TouchableOpacity
+                    key={type.id}
+                    style={[
+                      styles.optionRowLarge,
+                      {
+                        borderColor: accountabilityType === type.id ? "#FAB300" : colors.border,
+                        backgroundColor: accountabilityType === type.id
+                          ? colors.isDark ? "#1A1A0A" : "#FFFBEB"
+                          : colors.card,
+                      },
+                    ]}
+                    onPress={() => setAccountabilityType(type.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.optionTextContent}>
+                      <Text style={[styles.optionLabel, { color: colors.text }]}>
+                        {type.label}
+                      </Text>
+                      <Text style={[styles.optionDescription, { color: colors.textSecondary }]}>
+                        {type.description}
+                      </Text>
+                    </View>
+                    {accountabilityType === type.id && (
+                      <View style={styles.checkBadge}>
+                        <Check size={14} color="#000000" strokeWidth={3} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Navigation Footer */}
+        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          {step !== "title" ? (
+            <TouchableOpacity 
+              style={[styles.backButton, { borderColor: colors.border }]} 
+              onPress={handleBack}
+            >
+              <ChevronLeft size={20} color={colors.text} />
+              <Text style={[styles.backButtonText, { color: colors.text }]}>Back</Text>
+            </TouchableOpacity>
+          ) : (
+            <View />
+          )}
+
           {step === "accountability" ? (
-            <Button
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                (!canProceed() || isSubmitting) && styles.buttonDisabled,
+              ]}
               onPress={handleCreate}
-              loading={isSubmitting}
+              disabled={!canProceed() || isSubmitting}
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSubmitting ? "Creating..." : "Create Goal"}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                !canProceed() && styles.buttonDisabled,
+              ]}
+              onPress={handleNext}
               disabled={!canProceed()}
             >
-              Create goal
-            </Button>
-          ) : (
-            <Button onPress={handleNext} disabled={!canProceed()}>
-              Continue
-            </Button>
+              <Text style={styles.primaryButtonText}>Continue</Text>
+              <ChevronRight size={20} color="#FFFFFF" />
+            </TouchableOpacity>
           )}
         </View>
-      </ScrollView>
+      </View>
     </>
   );
 }
@@ -276,76 +347,180 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    padding: 24,
-    flexGrow: 1,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 60,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
   },
-  cancelButton: {
-    fontSize: 15,
-    fontFamily: "Inter",
+  closeButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  headerRight: {
+    width: 44,
   },
   progressContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    alignItems: "center",
     gap: 8,
-    marginBottom: 32,
   },
-  progressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  progressTrack: {
+    width: "100%",
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: "#FAB300",
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 13,
+  },
+  content: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    paddingTop: 8,
   },
   stepContent: {
     flex: 1,
   },
   stepTitle: {
-    fontSize: 24,
-    fontWeight: "600",
-    fontFamily: "Inter",
+    fontSize: 28,
+    fontWeight: "700",
     marginBottom: 8,
   },
   stepSubtitle: {
     fontSize: 15,
-    fontFamily: "Inter",
+    marginBottom: 32,
+    lineHeight: 22,
+  },
+  inputGroup: {
     marginBottom: 24,
   },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  textInput: {
+    fontSize: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  textArea: {
+    minHeight: 120,
+    paddingTop: 14,
+  },
   optionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
+  },
+  optionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    minWidth: "48%",
+    flexGrow: 1,
   },
   optionsList: {
     gap: 12,
   },
-  option: {
+  optionRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderRadius: 12,
     borderWidth: 1,
   },
-  optionContent: {
+  optionRowLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  optionTextContent: {
     flex: 1,
+    marginRight: 12,
   },
   optionLabel: {
     fontSize: 16,
     fontWeight: "500",
-    fontFamily: "Inter",
   },
   optionDescription: {
     fontSize: 14,
-    fontFamily: "Inter",
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 20,
   },
-  checkCircle: {
+  checkBadge: {
     width: 24,
     height: 24,
     borderRadius: 12,
+    backgroundColor: "#FAB300",
     alignItems: "center",
     justifyContent: "center",
   },
-  navigation: {
+  footer: {
     flexDirection: "row",
-    gap: 12,
-    paddingTop: 24,
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderTopWidth: 1,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  backButtonText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#000000",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
   },
 });
-

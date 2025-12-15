@@ -4,14 +4,17 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
+import { useThemeStore } from "@/stores/themeStore";
 import { Colors } from "@/lib/constants";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const initialize = useAuthStore((state) => state.initialize);
+  const initializeTheme = useThemeStore((state) => state.initialize);
 
   useEffect(() => {
     initialize();
+    initializeTheme();
   }, []);
 
   const isDark = colorScheme === "dark";

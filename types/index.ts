@@ -1,5 +1,15 @@
 export * from "./database";
 
+// Re-export task types from database
+export type { TaskDB, TaskInsert, TaskUpdate } from "./database";
+
+// Task type aliases for convenience
+export type TaskPriority = "low" | "medium" | "high";
+export type TaskStatus = "pending" | "completed" | "cancelled";
+export type TaskRecurrence = "none" | "daily" | "weekly" | "monthly";
+
+// TaskWithDetails is now exported from taskStore.ts
+
 // Extended types with joined data
 export interface GoalWithDetails {
   id: string;

@@ -99,7 +99,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     marginBottom: 8,
-    fontFamily: "Inter",
   },
   inputContainer: {
     flexDirection: "row",
@@ -112,7 +111,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     fontSize: 15,
-    fontFamily: "Inter",
   },
   eyeButton: {
     padding: 4,
@@ -120,12 +118,10 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 13,
     marginTop: 6,
-    fontFamily: "Inter",
   },
   helper: {
     fontSize: 13,
     marginTop: 6,
-    fontFamily: "Inter",
   },
 });
 

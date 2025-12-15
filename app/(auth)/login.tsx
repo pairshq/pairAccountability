@@ -214,7 +214,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     textAlign: "center",
     marginBottom: 8,
-    fontFamily: "Inter",
     letterSpacing: -0.5,
   },
   subtitle: {
@@ -222,7 +221,6 @@ const styles = StyleSheet.create({
     color: "#6B6B6B",
     textAlign: "center",
     marginBottom: 32,
-    fontFamily: "Inter",
   },
   form: {
     marginTop: 8,
@@ -235,7 +233,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#FFFFFF",
     marginBottom: 8,
-    fontFamily: "Inter",
   },
   labelRow: {
     flexDirection: "row",
@@ -246,7 +243,6 @@ const styles = StyleSheet.create({
   forgotPassword: {
     fontSize: 14,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   errorContainer: {
     backgroundColor: "#E74C3C15",
@@ -259,7 +255,6 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 14,
     color: "#E74C3C",
-    fontFamily: "Inter",
   },
   signInButton: {
     backgroundColor: "#FFFFFF",
@@ -276,7 +271,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#000000",
-    fontFamily: "Inter",
   },
   separator: {
     flexDirection: "row",
@@ -292,7 +286,6 @@ const styles = StyleSheet.create({
   separatorText: {
     fontSize: 13,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   googleButton: {
     flexDirection: "row",
@@ -309,7 +302,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   footer: {
     flexDirection: "row",
@@ -322,12 +314,10 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   footerLink: {
     fontSize: 14,
     color: "#FFFFFF",
     fontWeight: "500",
-    fontFamily: "Inter",
   },
 });

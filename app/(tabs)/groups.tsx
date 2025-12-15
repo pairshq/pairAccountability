@@ -10,19 +10,19 @@ import {
   TextInput,
   Alert,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, Users, X } from "lucide-react-native";
-import { Card, Button, Input } from "@/components/ui";
+import { Plus, Users, X, Search, UserPlus, ChevronRight, Hash } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGroupStore } from "@/stores/groupStore";
+import { useResponsive } from "@/hooks/useResponsive";
 
 export default function GroupsScreen() {
   const colors = useColors();
   const router = useRouter();
   const { user } = useAuthStore();
   const { groups, isLoading, fetchGroups, createGroup, joinGroup } = useGroupStore();
+  const { isDesktop } = useResponsive();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -79,33 +79,49 @@ export default function GroupsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Groups</Text>
-        <TouchableOpacity
-          onPress={() => setShowCreateModal(true)}
-          style={[styles.addButton, { backgroundColor: colors.accent }]}
-        >
-          <Plus size={24} color="#000000" strokeWidth={2} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Join Group Button */}
-      <View style={styles.joinSection}>
-        <TouchableOpacity
-          onPress={() => setShowJoinModal(true)}
-          style={[styles.joinButton, { borderColor: colors.border }]}
-        >
-          <Text style={[styles.joinButtonText, { color: colors.text }]}>
-            Join a group with invite code
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Groups</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+            {groups.length} group{groups.length !== 1 ? "s" : ""}
           </Text>
-        </TouchableOpacity>
+        </View>
+        <View style={styles.headerRight}>
+          {isDesktop && (
+            <View style={[styles.searchContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Search size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search groups"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={() => setShowJoinModal(true)}
+            style={[styles.secondaryButton, { borderColor: colors.border }]}
+          >
+            <UserPlus size={18} color={colors.text} />
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Join</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowCreateModal(true)}
+            style={styles.primaryButton}
+          >
+            <Plus size={20} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Create</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -116,16 +132,33 @@ export default function GroupsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {groups.length > 0 ? (
-          <View style={styles.groupList}>
+          <View style={[styles.groupsGrid, isDesktop && styles.groupsGridDesktop]}>
             {groups.map((group) => (
-              <Card
+              <TouchableOpacity
                 key={group.id}
                 onPress={() => router.push(`/group/${group.id}`)}
-                style={styles.groupCard}
+                style={[
+                  styles.groupCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                  isDesktop && styles.groupCardDesktop,
+                ]}
+                activeOpacity={0.7}
               >
-                <Text style={[styles.groupName, { color: colors.text }]}>
-                  {group.name}
-                </Text>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.groupIcon, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+                    <Users size={20} color={colors.textSecondary} />
+                  </View>
+                  <View style={styles.groupInfo}>
+                    <Text style={[styles.groupName, { color: colors.text }]} numberOfLines={1}>
+                      {group.name}
+                    </Text>
+                    <Text style={[styles.memberCount, { color: colors.textSecondary }]}>
+                      {group.member_count} member{group.member_count !== 1 ? "s" : ""}
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={colors.textSecondary} />
+                </View>
+                
                 {group.description && (
                   <Text
                     style={[styles.groupDescription, { color: colors.textSecondary }]}
@@ -134,36 +167,57 @@ export default function GroupsScreen() {
                     {group.description}
                   </Text>
                 )}
-                <View style={styles.groupMeta}>
-                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                    {group.member_count} member{group.member_count !== 1 ? "s" : ""}
-                  </Text>
-                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                    ·
-                  </Text>
-                  <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                    {group.active_goals_count} active goal{group.active_goals_count !== 1 ? "s" : ""}
-                  </Text>
+
+                <View style={styles.cardStats}>
+                  <View style={[styles.statItem, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+                    <Text style={[styles.statValue, { color: colors.text }]}>
+                      {group.active_goals_count}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                      Active Goals
+                    </Text>
+                  </View>
+                  <View style={[styles.statItem, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+                    <Text style={[styles.statValue, { color: colors.text }]}>
+                      {group.member_count}
+                    </Text>
+                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                      Members
+                    </Text>
+                  </View>
                 </View>
-              </Card>
+              </TouchableOpacity>
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <View
-              style={[
-                styles.emptyIcon,
-                { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" },
-              ]}
-            >
-              <Users size={32} color={colors.textSecondary} strokeWidth={1.5} />
+            <View style={[styles.emptyIcon, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Users size={40} color={colors.textSecondary} strokeWidth={1.5} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               No groups yet
             </Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Create a group or join one with an invite code.
+              Create a group to collaborate with friends or join an existing one with an invite code.
             </Text>
+            <View style={styles.emptyActions}>
+              <TouchableOpacity
+                onPress={() => setShowCreateModal(true)}
+                style={styles.emptyPrimaryButton}
+              >
+                <Plus size={20} color="#FFFFFF" />
+                <Text style={styles.emptyPrimaryButtonText}>Create Group</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowJoinModal(true)}
+                style={[styles.emptySecondaryButton, { borderColor: colors.border }]}
+              >
+                <Hash size={18} color={colors.text} />
+                <Text style={[styles.emptySecondaryButtonText, { color: colors.text }]}>
+                  Join with Code
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -171,43 +225,74 @@ export default function GroupsScreen() {
       {/* Create Group Modal */}
       <Modal
         visible={showCreateModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
+        transparent
         onRequestClose={() => setShowCreateModal(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Create group
-            </Text>
-            <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-              <X size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.modalContent}>
-            <Input
-              label="Group name"
-              placeholder="Enter group name"
-              value={groupName}
-              onChangeText={setGroupName}
-            />
-            <Input
-              label="Description (optional)"
-              placeholder="What's this group about?"
-              value={groupDescription}
-              onChangeText={setGroupDescription}
-              multiline
-              numberOfLines={3}
-            />
-            <Button
-              onPress={handleCreateGroup}
-              loading={isSubmitting}
-              disabled={!groupName.trim()}
-              fullWidth
-            >
-              Create group
-            </Button>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Create group</Text>
+              <TouchableOpacity 
+                onPress={() => setShowCreateModal(false)}
+                style={[styles.modalClose, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
+              >
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.modalContent}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Group name</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { 
+                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      color: colors.text,
+                    }
+                  ]}
+                  placeholder="Enter group name"
+                  placeholderTextColor={colors.textSecondary}
+                  value={groupName}
+                  onChangeText={setGroupName}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    styles.modalTextarea,
+                    { 
+                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      color: colors.text,
+                    }
+                  ]}
+                  placeholder="What's this group about?"
+                  placeholderTextColor={colors.textSecondary}
+                  value={groupDescription}
+                  onChangeText={setGroupDescription}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={handleCreateGroup}
+                disabled={!groupName.trim() || isSubmitting}
+                style={[
+                  styles.modalButton,
+                  (!groupName.trim() || isSubmitting) && styles.modalButtonDisabled,
+                ]}
+              >
+                <Text style={styles.modalButtonText}>
+                  {isSubmitting ? "Creating..." : "Create Group"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -215,41 +300,63 @@ export default function GroupsScreen() {
       {/* Join Group Modal */}
       <Modal
         visible={showJoinModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
+        animationType="fade"
+        transparent
         onRequestClose={() => setShowJoinModal(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Join group
-            </Text>
-            <TouchableOpacity onPress={() => setShowJoinModal(false)}>
-              <X size={24} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.modalContent}>
-            <Input
-              label="Invite code"
-              placeholder="Enter 6-character code"
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              autoCapitalize="characters"
-              maxLength={6}
-            />
-            <Button
-              onPress={handleJoinGroup}
-              loading={isSubmitting}
-              disabled={inviteCode.trim().length !== 6}
-              fullWidth
-            >
-              Join group
-            </Button>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Join group</Text>
+              <TouchableOpacity 
+                onPress={() => setShowJoinModal(false)}
+                style={[styles.modalClose, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
+              >
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.modalContent}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>Invite code</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    styles.codeInput,
+                    { 
+                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      color: colors.text,
+                    }
+                  ]}
+                  placeholder="XXXXXX"
+                  placeholderTextColor={colors.textSecondary}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  autoCapitalize="characters"
+                  maxLength={6}
+                />
+                <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
+                  Enter the 6-character invite code
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleJoinGroup}
+                disabled={inviteCode.trim().length !== 6 || isSubmitting}
+                style={[
+                  styles.modalButton,
+                  (inviteCode.trim().length !== 6 || isSubmitting) && styles.modalButtonDisabled,
+                ]}
+              >
+                <Text style={styles.modalButtonText}>
+                  {isSubmitting ? "Joining..." : "Join Group"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -262,67 +369,139 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "600",
-    fontFamily: "Inter",
+  headerLeft: {
+    flex: 1,
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  headerRight: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 12,
   },
-  joinSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-  },
-  joinButton: {
-    borderWidth: 1,
-    borderRadius: 8,
-    borderStyle: "dashed",
-    paddingVertical: 14,
+  searchContainer: {
+    flexDirection: "row",
     alignItems: "center",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+    minWidth: 240,
   },
-  joinButtonText: {
+  searchInput: {
+    flex: 1,
     fontSize: 15,
-    fontFamily: "Inter",
+  },
+  secondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#000000",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   content: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingVertical: 24,
   },
-  groupList: {
-    gap: 12,
+  scrollContentDesktop: {
+    paddingHorizontal: 32,
+  },
+  groupsGrid: {
+    gap: 16,
+  },
+  groupsGridDesktop: {
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
   groupCard: {
-    padding: 16,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+  },
+  groupCardDesktop: {
+    width: "calc(50% - 8px)",
+    minWidth: 320,
+    maxWidth: 500,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
+  },
+  groupIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupInfo: {
+    flex: 1,
   },
   groupName: {
     fontSize: 17,
-    fontWeight: "500",
-    fontFamily: "Inter",
-    marginBottom: 4,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  memberCount: {
+    fontSize: 13,
   },
   groupDescription: {
     fontSize: 14,
-    fontFamily: "Inter",
-    marginBottom: 12,
+    lineHeight: 20,
+    marginBottom: 16,
   },
-  groupMeta: {
+  cardStats: {
     flexDirection: "row",
-    gap: 8,
+    gap: 12,
   },
-  metaText: {
-    fontSize: 13,
-    fontFamily: "Inter",
+  statItem: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 12,
   },
   emptyState: {
     alignItems: "center",
@@ -330,42 +509,133 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "600",
-    fontFamily: "Inter",
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 15,
-    fontFamily: "Inter",
     textAlign: "center",
+    marginBottom: 32,
+    maxWidth: 320,
+    lineHeight: 22,
+  },
+  emptyActions: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  emptyPrimaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#000000",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  emptyPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  emptySecondaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  emptySecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
   },
   modalContainer: {
-    flex: 1,
-    paddingTop: 16,
+    width: "100%",
+    maxWidth: 440,
+    borderRadius: 20,
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    padding: 20,
+    paddingBottom: 16,
   },
   modalTitle: {
     fontSize: 20,
     fontWeight: "600",
-    fontFamily: "Inter",
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalContent: {
-    paddingHorizontal: 24,
+    padding: 20,
+    paddingTop: 0,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  modalInput: {
+    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  modalTextarea: {
+    minHeight: 100,
+    paddingTop: 14,
+  },
+  codeInput: {
+    fontSize: 20,
+    fontWeight: "600",
+    letterSpacing: 4,
+    textAlign: "center",
+  },
+  inputHint: {
+    fontSize: 13,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  modalButton: {
+    backgroundColor: "#000000",
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  modalButtonDisabled: {
+    opacity: 0.5,
+  },
+  modalButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
-

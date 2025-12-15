@@ -228,6 +228,89 @@ export interface Database {
           is_read?: boolean;
         };
       };
+      tasks: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          description: string | null;
+          due_date: string | null;
+          due_time: string | null;
+          priority: "low" | "medium" | "high";
+          status: "pending" | "completed" | "cancelled";
+          recurrence: "none" | "daily" | "weekly" | "weekdays" | "monthly" | "yearly";
+          category: string | null;
+          project_id: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          description?: string | null;
+          due_date?: string | null;
+          due_time?: string | null;
+          priority?: "low" | "medium" | "high";
+          status?: "pending" | "completed" | "cancelled";
+          recurrence?: "none" | "daily" | "weekly" | "weekdays" | "monthly" | "yearly";
+          category?: string | null;
+          project_id?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          title?: string;
+          description?: string | null;
+          due_date?: string | null;
+          due_time?: string | null;
+          priority?: "low" | "medium" | "high";
+          status?: "pending" | "completed" | "cancelled";
+          recurrence?: "none" | "daily" | "weekly" | "weekdays" | "monthly" | "yearly";
+          category?: string | null;
+          project_id?: string | null;
+          completed_at?: string | null;
+          updated_at?: string;
+        };
+      };
+      labels: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          color: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          color?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          color?: string;
+        };
+      };
+      task_labels: {
+        Row: {
+          task_id: string;
+          label_id: string;
+        };
+        Insert: {
+          task_id: string;
+          label_id: string;
+        };
+        Update: {
+          task_id?: string;
+          label_id?: string;
+        };
+      };
     };
   };
 }
@@ -241,4 +324,11 @@ export type Group = Database["public"]["Tables"]["groups"]["Row"];
 export type GroupMember = Database["public"]["Tables"]["group_members"]["Row"];
 export type GroupMessage = Database["public"]["Tables"]["group_messages"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+export type TaskDB = Database["public"]["Tables"]["tasks"]["Row"];
+export type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
+export type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
+export type Label = Database["public"]["Tables"]["labels"]["Row"];
+export type LabelInsert = Database["public"]["Tables"]["labels"]["Insert"];
+export type LabelUpdate = Database["public"]["Tables"]["labels"]["Update"];
+export type TaskLabel = Database["public"]["Tables"]["task_labels"]["Row"];
 

@@ -135,7 +135,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 15,
     fontWeight: "500",
-    fontFamily: "Inter",
   },
   meta: {
     flexDirection: "row",
@@ -144,7 +143,6 @@ const styles = StyleSheet.create({
   },
   subtext: {
     fontSize: 13,
-    fontFamily: "Inter",
   },
   streak: {
     flexDirection: "row",
@@ -154,7 +152,6 @@ const styles = StyleSheet.create({
   streakText: {
     fontSize: 14,
     fontWeight: "600",
-    fontFamily: "Inter",
   },
 });
 

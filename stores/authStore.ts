@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { supabase } from "@/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import type { Profile } from "@/types";
 
 interface AuthState {
@@ -23,8 +23,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
 
   initialize: async () => {
+    // If Supabase is not configured, skip initialization
+    if (!isSupabaseConfigured) {
+      console.warn("Supabase is not configured. Running in demo mode.");
+      set({ isLoading: false, isAuthenticated: false });
+      return;
+    }
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Auth initialization timeout")), 5000)
+      );
+
+      const sessionPromise = supabase.auth.getSession();
+      const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as any;
       
       if (session?.user) {
         const { data: profile } = await supabase
@@ -67,7 +80,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     } catch (error) {
       console.error("Auth initialization error:", error);
-      set({ isLoading: false });
+      // Always set loading to false, even on error
+      set({ isLoading: false, isAuthenticated: false });
     }
   },
 

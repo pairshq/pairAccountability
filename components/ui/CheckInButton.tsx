@@ -104,7 +104,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 15,
     fontWeight: "500",
-    fontFamily: "Inter",
   },
   group: {
     flexDirection: "row",

@@ -6,14 +6,14 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  TextInput,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Plus, Target, Flame } from "lucide-react-native";
-import { Card } from "@/components/ui";
+import { Plus, Target, Flame, Search, Filter, ChevronRight } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGoalStore } from "@/stores/goalStore";
+import { useResponsive } from "@/hooks/useResponsive";
 import { Categories } from "@/lib/constants";
 
 export default function GoalsScreen() {
@@ -21,6 +21,7 @@ export default function GoalsScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const { goals, isLoading, fetchGoals } = useGoalStore();
+  const { isDesktop } = useResponsive();
 
   useEffect(() => {
     if (user) {
@@ -38,22 +39,46 @@ export default function GoalsScreen() {
     return Categories.find((c) => c.id === categoryId)?.label || categoryId;
   };
 
+  const activeGoals = goals.filter((g) => g.status === "active");
+  const completedGoals = goals.filter((g) => g.status === "completed");
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Goals</Text>
-        <TouchableOpacity
-          onPress={() => router.push("/create-goal")}
-          style={[styles.addButton, { backgroundColor: colors.accent }]}
-        >
-          <Plus size={24} color="#000000" strokeWidth={2} />
-        </TouchableOpacity>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Goals</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+            {activeGoals.length} active goal{activeGoals.length !== 1 ? "s" : ""}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          {isDesktop && (
+            <View style={[styles.searchContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Search size={18} color={colors.textSecondary} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search goals"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+          )}
+          <TouchableOpacity
+            onPress={() => router.push("/create-goal")}
+            style={styles.addButton}
+          >
+            <Plus size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>New Goal</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isDesktop && styles.scrollContentDesktop,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -64,82 +89,119 @@ export default function GoalsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {goals.length > 0 ? (
-          <View style={styles.goalGrid}>
-            {goals.map((goal) => (
-              <Card
-                key={goal.id}
-                onPress={() => router.push(`/goal/${goal.id}`)}
-                style={styles.goalCard}
-              >
-                <View style={styles.cardHeader}>
-                  <Text
-                    style={[styles.categoryLabel, { color: colors.textSecondary }]}
-                  >
-                    {getCategoryLabel(goal.category)}
-                  </Text>
-                  {goal.current_streak > 0 && (
-                    <View style={styles.streakBadge}>
-                      <Flame size={14} color={colors.accent} />
-                      <Text style={[styles.streakText, { color: colors.accent }]}>
-                        {goal.current_streak}
+          <>
+            {/* Active Goals */}
+            {activeGoals.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Active Goals</Text>
+                <View style={[styles.goalsGrid, isDesktop && styles.goalsGridDesktop]}>
+                  {activeGoals.map((goal) => (
+                    <TouchableOpacity
+                      key={goal.id}
+                      onPress={() => router.push(`/goal/${goal.id}`)}
+                      style={[
+                        styles.goalCard,
+                        { 
+                          backgroundColor: colors.card, 
+                          borderColor: colors.border,
+                        },
+                        isDesktop && styles.goalCardDesktop,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.cardTop}>
+                        <View style={[styles.categoryBadge, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+                          <Text style={[styles.categoryText, { color: colors.textSecondary }]}>
+                            {getCategoryLabel(goal.category)}
+                          </Text>
+                        </View>
+                        {goal.current_streak > 0 && (
+                          <View style={styles.streakBadge}>
+                            <Flame size={14} color="#FAB300" />
+                            <Text style={styles.streakText}>{goal.current_streak}</Text>
+                          </View>
+                        )}
+                      </View>
+                      
+                      <Text style={[styles.goalTitle, { color: colors.text }]} numberOfLines={2}>
+                        {goal.title}
                       </Text>
-                    </View>
-                  )}
+                      
+                      <View style={styles.cardBottom}>
+                        <Text style={[styles.frequencyText, { color: colors.textSecondary }]}>
+                          {goal.frequency.charAt(0).toUpperCase() + goal.frequency.slice(1)}
+                        </Text>
+                        {goal.partner && (
+                          <Text style={[styles.partnerText, { color: colors.textSecondary }]}>
+                            • with {goal.partner.username}
+                          </Text>
+                        )}
+                      </View>
+
+                      <View style={styles.cardAction}>
+                        <Text style={[styles.viewDetailsText, { color: colors.accent }]}>View details</Text>
+                        <ChevronRight size={16} color={colors.accent} />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-                
-                <Text
-                  style={[styles.goalTitle, { color: colors.text }]}
-                  numberOfLines={2}
-                >
-                  {goal.title}
-                </Text>
-                
-                <View style={styles.cardFooter}>
-                  <Text style={[styles.frequency, { color: colors.textSecondary }]}>
-                    {goal.frequency.charAt(0).toUpperCase() + goal.frequency.slice(1)}
-                  </Text>
-                  {goal.partner && (
-                    <Text style={[styles.partnerText, { color: colors.textSecondary }]}>
-                      with {goal.partner.username}
-                    </Text>
-                  )}
-                  {goal.group && (
-                    <Text style={[styles.partnerText, { color: colors.textSecondary }]}>
-                      {goal.group.name}
-                    </Text>
-                  )}
+              </View>
+            )}
+
+            {/* Completed Goals */}
+            {completedGoals.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Completed</Text>
+                <View style={[styles.goalsGrid, isDesktop && styles.goalsGridDesktop]}>
+                  {completedGoals.map((goal) => (
+                    <TouchableOpacity
+                      key={goal.id}
+                      onPress={() => router.push(`/goal/${goal.id}`)}
+                      style={[
+                        styles.goalCard,
+                        styles.goalCardCompleted,
+                        { 
+                          backgroundColor: colors.isDark ? "#0D1F0D" : "#F0FFF0", 
+                          borderColor: colors.isDark ? "#1B3D1B" : "#D0F0D0",
+                        },
+                        isDesktop && styles.goalCardDesktop,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.goalTitle, { color: colors.text }]} numberOfLines={2}>
+                        {goal.title}
+                      </Text>
+                      <Text style={[styles.frequencyText, { color: colors.textSecondary }]}>
+                        Completed • {goal.best_streak} day streak
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              </Card>
-            ))}
-          </View>
+              </View>
+            )}
+          </>
         ) : (
           <View style={styles.emptyState}>
-            <View
-              style={[
-                styles.emptyIcon,
-                { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" },
-              ]}
-            >
-              <Target size={32} color={colors.textSecondary} strokeWidth={1.5} />
+            <View style={[styles.emptyIcon, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+              <Target size={40} color={colors.textSecondary} strokeWidth={1.5} />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               No goals yet
             </Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Create your first goal to start building consistency.
+              Create your first goal to start building consistency and tracking your progress.
             </Text>
             <TouchableOpacity
               onPress={() => router.push("/create-goal")}
               style={styles.emptyButton}
             >
-              <Text style={[styles.emptyButtonText, { color: colors.accent }]}>
-                Create goal
-              </Text>
+              <Plus size={20} color="#FFFFFF" />
+              <Text style={styles.emptyButtonText}>Create Your First Goal</Text>
             </TouchableOpacity>
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -152,43 +214,104 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 16,
-    paddingBottom: 24,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "600",
-    fontFamily: "Inter",
+  headerLeft: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
+    minWidth: 240,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
   },
   addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#000000",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  addButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   content: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingVertical: 24,
   },
-  goalGrid: {
+  scrollContentDesktop: {
+    paddingHorizontal: 32,
+  },
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  goalsGrid: {
     gap: 12,
   },
-  goalCard: {
-    padding: 16,
+  goalsGridDesktop: {
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
-  cardHeader: {
+  goalCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+  },
+  goalCardDesktop: {
+    width: "calc(33.333% - 8px)",
+    minWidth: 280,
+    maxWidth: 400,
+  },
+  goalCardCompleted: {
+    opacity: 0.8,
+  },
+  cardTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  categoryLabel: {
-    fontSize: 13,
-    fontFamily: "Inter",
+  categoryBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  categoryText: {
+    fontSize: 12,
+    fontWeight: "500",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -200,25 +323,34 @@ const styles = StyleSheet.create({
   streakText: {
     fontSize: 14,
     fontWeight: "600",
-    fontFamily: "Inter",
+    color: "#FAB300",
   },
   goalTitle: {
     fontSize: 17,
-    fontWeight: "500",
-    fontFamily: "Inter",
-    marginBottom: 12,
+    fontWeight: "600",
+    marginBottom: 8,
+    lineHeight: 24,
   },
-  cardFooter: {
+  cardBottom: {
     flexDirection: "row",
-    gap: 8,
+    alignItems: "center",
+    marginBottom: 16,
   },
-  frequency: {
+  frequencyText: {
     fontSize: 13,
-    fontFamily: "Inter",
   },
   partnerText: {
     fontSize: 13,
-    fontFamily: "Inter",
+    marginLeft: 4,
+  },
+  cardAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  viewDetailsText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
   emptyState: {
     alignItems: "center",
@@ -226,32 +358,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "600",
-    fontFamily: "Inter",
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 15,
-    fontFamily: "Inter",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 32,
+    maxWidth: 320,
+    lineHeight: 22,
   },
   emptyButton: {
-    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#000000",
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
   },
   emptyButtonText: {
-    fontSize: 15,
-    fontWeight: "500",
-    fontFamily: "Inter",
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
-

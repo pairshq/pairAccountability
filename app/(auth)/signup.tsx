@@ -252,7 +252,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     textAlign: "center",
     marginBottom: 8,
-    fontFamily: "Inter",
     letterSpacing: -0.5,
   },
   subtitle: {
@@ -260,7 +259,6 @@ const styles = StyleSheet.create({
     color: "#6B6B6B",
     textAlign: "center",
     marginBottom: 32,
-    fontFamily: "Inter",
   },
   authButton: {
     flexDirection: "row",
@@ -288,13 +286,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   authButtonSubtext: {
     fontSize: 13,
     color: "#6B6B6B",
     marginTop: 2,
-    fontFamily: "Inter",
   },
   googleButton: {
     flexDirection: "row",
@@ -311,7 +307,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "500",
     color: "#FFFFFF",
-    fontFamily: "Inter",
   },
   separator: {
     flexDirection: "row",
@@ -327,7 +322,6 @@ const styles = StyleSheet.create({
   separatorText: {
     fontSize: 13,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   form: {
     marginTop: 8,
@@ -343,7 +337,6 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 14,
     color: "#E74C3C",
-    fontFamily: "Inter",
   },
   submitButton: {
     backgroundColor: "#FFFFFF",
@@ -359,7 +352,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#000000",
-    fontFamily: "Inter",
   },
   backButton: {
     marginTop: 16,
@@ -368,7 +360,6 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 14,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   footer: {
     flexDirection: "row",
@@ -381,12 +372,10 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     color: "#6B6B6B",
-    fontFamily: "Inter",
   },
   footerLink: {
     fontSize: 14,
     color: "#FFFFFF",
     fontWeight: "500",
-    fontFamily: "Inter",
   },
 });

@@ -141,7 +141,6 @@ const styles = StyleSheet.create({
   },
   text: {
     fontWeight: "500",
-    fontFamily: "Inter",
   },
 });
 
