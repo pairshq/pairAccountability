@@ -44,10 +44,14 @@ export interface GroupWithDetails {
   id: string;
   name: string;
   description: string | null;
+  avatar_url: string | null;
   invite_code: string;
+  is_private: boolean;
+  password_hash: string | null;
   created_by: string;
   member_count: number;
   active_goals_count: number;
+  online_count: number;
   members: {
     id: string;
     username: string;

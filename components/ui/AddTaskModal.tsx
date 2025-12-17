@@ -25,7 +25,26 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
+  Check,
 } from "lucide-react-native";
+
+// Generate time options in 15-minute increments
+const generateTimeOptions = () => {
+  const times = [];
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const h = hour % 12 || 12;
+      const ampm = hour < 12 ? "AM" : "PM";
+      const m = minute.toString().padStart(2, "0");
+      const display = `${h}:${m} ${ampm}`;
+      const value = `${hour.toString().padStart(2, "0")}:${m}:00`;
+      times.push({ display, value });
+    }
+  }
+  return times;
+};
+
+const TIME_OPTIONS = generateTimeOptions();
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useTaskStore } from "@/stores/taskStore";
@@ -80,6 +99,46 @@ export function AddTaskModal({ visible, onClose, initialDate }: AddTaskModalProp
   
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  
+  // Custom time input
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customHour, setCustomHour] = useState("");
+  const [customMinute, setCustomMinute] = useState("");
+  const [customPeriod, setCustomPeriod] = useState<"AM" | "PM">("AM");
+  const [customTimeError, setCustomTimeError] = useState<string | null>(null);
+  
+  // Validate and set custom time
+  const handleCustomTimeSubmit = () => {
+    setCustomTimeError(null);
+    
+    const hourNum = parseInt(customHour, 10);
+    if (isNaN(hourNum) || hourNum < 1 || hourNum > 12) {
+      setCustomTimeError("Hour must be between 1 and 12");
+      return;
+    }
+    
+    const minuteNum = parseInt(customMinute, 10);
+    if (isNaN(minuteNum) || minuteNum < 0 || minuteNum > 59) {
+      setCustomTimeError("Minute must be between 0 and 59");
+      return;
+    }
+    
+    let hour24 = hourNum;
+    if (customPeriod === "AM") {
+      hour24 = hourNum === 12 ? 0 : hourNum;
+    } else {
+      hour24 = hourNum === 12 ? 12 : hourNum + 12;
+    }
+    
+    const timeValue = `${hour24.toString().padStart(2, "0")}:${minuteNum.toString().padStart(2, "0")}:00`;
+    setDueTime(timeValue);
+    setShowCustomTime(false);
+    setShowTimePicker(false);
+    setCustomHour("");
+    setCustomMinute("");
+    setCustomPeriod("AM");
+    setCustomTimeError(null);
+  };
 
   const resetForm = () => {
     setTitle("");
@@ -104,11 +163,27 @@ export function AddTaskModal({ visible, onClose, initialDate }: AddTaskModalProp
 
     setIsSubmitting(true);
     
+    // Adjust due date for recurring tasks if the scheduled time has already passed today
+    let adjustedDueDate = dueDate || todayStr;
+    if (recurrence !== "none" && dueTime && adjustedDueDate) {
+      const now = new Date();
+      const scheduledDate = new Date(adjustedDueDate);
+      const [hours, minutes] = dueTime.split(":").map(Number);
+      scheduledDate.setHours(hours, minutes, 0, 0);
+      
+      // If the scheduled datetime is in the past, move to next occurrence
+      if (scheduledDate < now) {
+        const nextDate = new Date(adjustedDueDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+        adjustedDueDate = nextDate.toISOString().split("T")[0];
+      }
+    }
+    
     const { error } = await createTask({
       user_id: user.id,
       title: title.trim(),
       description: description.trim() || null,
-      due_date: dueDate || todayStr,
+      due_date: adjustedDueDate,
       due_time: dueTime,
       priority,
       status: "pending",
@@ -123,6 +198,19 @@ export function AddTaskModal({ visible, onClose, initialDate }: AddTaskModalProp
       await fetchTasks(user.id);
       handleClose();
     }
+  };
+
+  // Time helper
+  const getTimeLabel = (timeStr: string | null) => {
+    if (!timeStr) return null;
+    const option = TIME_OPTIONS.find(t => t.value === timeStr);
+    if (option) return option.display;
+    // Handle custom times not in preset options
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    const h = hours % 12 || 12;
+    const ampm = hours < 12 ? "AM" : "PM";
+    const m = minutes.toString().padStart(2, "0");
+    return `${h}:${m} ${ampm}`;
   };
 
   // Date helpers
@@ -470,6 +558,122 @@ export function AddTaskModal({ visible, onClose, initialDate }: AddTaskModalProp
             </View>
           )}
 
+          {/* Time Picker Dropdown */}
+          {showTimePicker && (
+            <View style={[styles.pickerDropdown, { backgroundColor: colors.isDark ? "#2C2C2E" : "#F5F5F5", maxHeight: 380 }]}>
+              <View style={[styles.selectedDateDisplay, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.selectedDateText, { color: colors.text }]}>
+                  {dueTime ? getTimeLabel(dueTime) : "Select time"}
+                </Text>
+                {dueTime && (
+                  <TouchableOpacity onPress={() => { setDueTime(null); setShowTimePicker(false); }}>
+                    <Text style={{ color: "#E74C3C", fontSize: 14 }}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {/* Custom Time Input Toggle */}
+              <TouchableOpacity
+                style={[styles.customTimeToggle, { borderBottomColor: colors.border }]}
+                onPress={() => setShowCustomTime(!showCustomTime)}
+              >
+                <View style={styles.customTimeToggleContent}>
+                  <Clock size={16} color="#FAB300" />
+                  <Text style={[styles.customTimeToggleText, { color: colors.text }]}>
+                    {showCustomTime ? "Hide custom time" : "Enter custom time"}
+                  </Text>
+                </View>
+                <Text style={{ color: "#FAB300", fontSize: 12 }}>{showCustomTime ? "▲" : "▼"}</Text>
+              </TouchableOpacity>
+              
+              {showCustomTime && (
+                <View style={[styles.customTimeContainer, { borderBottomColor: colors.border }]}>
+                  <View style={styles.customTimeInputRow}>
+                    <View style={styles.customTimeInputGroup}>
+                      <TextInput
+                        style={[styles.customTimeInput, { color: colors.text, borderColor: customTimeError && customTimeError.includes("Hour") ? "#E74C3C" : colors.border, backgroundColor: colors.isDark ? "#1C1C1E" : "#FFFFFF" }]}
+                        value={customHour}
+                        onChangeText={(text) => {
+                          const num = text.replace(/[^0-9]/g, "");
+                          if (num.length <= 2) setCustomHour(num);
+                        }}
+                        placeholder="HH"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                      <Text style={[styles.customTimeSeparator, { color: colors.text }]}>:</Text>
+                      <TextInput
+                        style={[styles.customTimeInput, { color: colors.text, borderColor: customTimeError && customTimeError.includes("Minute") ? "#E74C3C" : colors.border, backgroundColor: colors.isDark ? "#1C1C1E" : "#FFFFFF" }]}
+                        value={customMinute}
+                        onChangeText={(text) => {
+                          const num = text.replace(/[^0-9]/g, "");
+                          if (num.length <= 2) setCustomMinute(num);
+                        }}
+                        placeholder="MM"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                    </View>
+                    
+                    <View style={styles.periodToggle}>
+                      <TouchableOpacity
+                        style={[
+                          styles.periodBtn,
+                          { borderColor: colors.border, backgroundColor: customPeriod === "AM" ? "#FAB300" : (colors.isDark ? "#1C1C1E" : "#FFFFFF") }
+                        ]}
+                        onPress={() => setCustomPeriod("AM")}
+                      >
+                        <Text style={[styles.periodBtnText, { color: customPeriod === "AM" ? "#FFFFFF" : colors.text }]}>AM</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.periodBtn,
+                          { borderColor: colors.border, backgroundColor: customPeriod === "PM" ? "#FAB300" : (colors.isDark ? "#1C1C1E" : "#FFFFFF") }
+                        ]}
+                        onPress={() => setCustomPeriod("PM")}
+                      >
+                        <Text style={[styles.periodBtnText, { color: customPeriod === "PM" ? "#FFFFFF" : colors.text }]}>PM</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  
+                  {customTimeError && (
+                    <Text style={styles.customTimeError}>{customTimeError}</Text>
+                  )}
+                  
+                  <TouchableOpacity
+                    style={[styles.customTimeSubmitBtn, { opacity: customHour && customMinute ? 1 : 0.5 }]}
+                    onPress={handleCustomTimeSubmit}
+                    disabled={!customHour || !customMinute}
+                  >
+                    <Text style={styles.customTimeSubmitText}>Set Time</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              <ScrollView style={{ maxHeight: showCustomTime ? 120 : 250 }} showsVerticalScrollIndicator={false}>
+                {TIME_OPTIONS.map((time) => (
+                  <TouchableOpacity
+                    key={time.value}
+                    style={[
+                      styles.timeOption,
+                      dueTime === time.value && { backgroundColor: colors.isDark ? "#3C3C3E" : "#E0E0E0" },
+                    ]}
+                    onPress={() => {
+                      setDueTime(time.value);
+                      setShowTimePicker(false);
+                    }}
+                  >
+                    <Text style={[styles.timeOptionText, { color: colors.text }]}>{time.display}</Text>
+                    {dueTime === time.value && <Check size={16} color="#FAB300" />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Bottom Row */}
           <View style={[styles.bottomRow, { borderTopColor: colors.border }]}>
             {/* Category Selector */}
@@ -589,6 +793,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   selectedDateDisplay: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
@@ -694,6 +901,95 @@ const styles = StyleSheet.create({
   },
   priorityText: {
     fontSize: 15,
+  },
+  // Time picker styles
+  timeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  timeOptionText: {
+    fontSize: 15,
+  },
+  // Custom time input styles
+  customTimeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  customTimeToggleContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  customTimeToggleText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  customTimeContainer: {
+    padding: 12,
+    borderBottomWidth: 1,
+  },
+  customTimeInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  customTimeInputGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  customTimeInput: {
+    width: 40,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    textAlign: "center",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  customTimeSeparator: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginHorizontal: 2,
+  },
+  periodToggle: {
+    flexDirection: "row",
+    gap: 0,
+  },
+  periodBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  periodBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  customTimeError: {
+    color: "#E74C3C",
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  customTimeSubmitBtn: {
+    backgroundColor: "#FAB300",
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: "center",
+  },
+  customTimeSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   bottomRow: {
     flexDirection: "row",

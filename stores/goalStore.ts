@@ -26,18 +26,24 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     
     const { data: goals, error } = await supabase
       .from("goals")
-      .select(`
-        *,
-        partner:profiles!goals_partner_id_fkey(id, username, avatar_url),
-        group:groups!goals_group_id_fkey(id, name)
-      `)
+      .select("*")
       .eq("user_id", userId)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
 
+    console.log("fetchGoals result:", goals, error);
+
     if (!error && goals) {
-      set({ goals: goals as GoalWithDetails[], isLoading: false });
+      // Map goals to GoalWithDetails format
+      const goalsWithDetails = goals.map(goal => ({
+        ...goal,
+        partner: null,
+        group: goal.group_id ? { id: goal.group_id, name: "Group" } : null,
+        today_check_in: null,
+      })) as GoalWithDetails[];
+      set({ goals: goalsWithDetails, isLoading: false });
     } else {
+      console.error("fetchGoals error:", error);
       set({ isLoading: false });
     }
   },
@@ -50,15 +56,12 @@ export const useGoalStore = create<GoalState>((set, get) => ({
     // Get goals
     const { data: goals, error: goalsError } = await supabase
       .from("goals")
-      .select(`
-        *,
-        partner:profiles!goals_partner_id_fkey(id, username, avatar_url),
-        group:groups!goals_group_id_fkey(id, name)
-      `)
+      .select("*")
       .eq("user_id", userId)
       .eq("is_active", true);
 
     if (goalsError) {
+      console.error("fetchTodayGoals error:", goalsError);
       set({ isLoading: false });
       return;
     }
@@ -75,6 +78,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       const checkIn = checkIns?.find((c) => c.goal_id === goal.id);
       return {
         ...goal,
+        partner: null,
+        group: goal.group_id ? { id: goal.group_id, name: "Group" } : null,
         today_check_in: checkIn
           ? { id: checkIn.id, status: checkIn.status, reflection: checkIn.reflection }
           : null,
@@ -93,6 +98,8 @@ export const useGoalStore = create<GoalState>((set, get) => ({
   },
 
   createGoal: async (goalData) => {
+    console.log("goalStore.createGoal called with:", goalData);
+    
     const { data, error } = await supabase
       .from("goals")
       .insert({
@@ -103,7 +110,10 @@ export const useGoalStore = create<GoalState>((set, get) => ({
       .select()
       .single();
 
+    console.log("Supabase insert result - data:", data, "error:", error);
+
     if (error) {
+      console.error("Goal creation error:", error);
       return { error: error.message };
     }
 

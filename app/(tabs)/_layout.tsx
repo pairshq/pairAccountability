@@ -1,19 +1,21 @@
 import { Tabs } from "expo-router";
 import { View, StyleSheet, Platform } from "react-native";
-import { Home, Target, Users, User, Clock, Calendar, Inbox, Sun } from "lucide-react-native";
+import { Home, Target, Users, User, Clock, Calendar, Inbox, Sun, Timer } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { Sidebar } from "@/components/ui";
 import { useResponsive } from "@/hooks/useResponsive";
+import { useFocusModeStore } from "@/stores/focusModeStore";
 
 export default function TabsLayout() {
   const colors = useColors();
   const { isDesktop } = useResponsive();
+  const isFullscreen = useFocusModeStore((state) => state.isFullscreen);
 
-  // Desktop: Show sidebar layout
+  // Desktop: Show sidebar layout (hide sidebar in fullscreen focus mode)
   if (isDesktop || Platform.OS === "web") {
     return (
-      <View style={[styles.desktopContainer, { backgroundColor: colors.background }]}>
-        <Sidebar />
+      <View style={[styles.desktopContainer, { backgroundColor: isFullscreen ? "#0D0D0D" : colors.background }]}>
+        {!isFullscreen && <Sidebar />}
         <View style={styles.desktopContent}>
           <Tabs
             screenOptions={{
@@ -26,8 +28,10 @@ export default function TabsLayout() {
             <Tabs.Screen name="today" />
             <Tabs.Screen name="calendar" />
             <Tabs.Screen name="inbox" />
+            <Tabs.Screen name="focus" />
             <Tabs.Screen name="goals" />
             <Tabs.Screen name="groups" />
+            <Tabs.Screen name="communities" />
             <Tabs.Screen name="profile" />
           </Tabs>
         </View>
@@ -115,6 +119,18 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="groups"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="focus"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="communities"
         options={{
           href: null, // Hide from tab bar
         }}

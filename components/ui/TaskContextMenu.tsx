@@ -25,6 +25,9 @@ import {
   ChevronLeft,
   Tag,
   Plus,
+  CalendarPlus,
+  XCircle,
+  AlertCircle,
 } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useTaskStore, TaskWithDetails } from "@/stores/taskStore";
@@ -90,7 +93,7 @@ const TIME_OPTIONS = generateTimeOptions();
 
 export function TaskContextMenu({ task, onUpdate }: TaskContextMenuProps) {
   const colors = useColors();
-  const { updateTask, deleteTask } = useTaskStore();
+  const { updateTask, deleteTask, rescheduleTask, dismissOverdueTask } = useTaskStore();
   const { user } = useAuthStore();
   const { labels, fetchLabels, setLabelsForTask, createLabel } = useLabelStore();
   const buttonRef = useRef<View>(null);
@@ -183,6 +186,30 @@ export function TaskContextMenu({ task, onUpdate }: TaskContextMenuProps) {
   const handleDelete = () => {
     console.log("TaskContextMenu: handleDelete called for task:", realTaskId);
     setShowDeleteConfirm(true);
+  };
+
+  // Reschedule overdue task to tomorrow
+  const handleRescheduleToTomorrow = async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    
+    const result = await rescheduleTask(task.id, tomorrowStr, task.due_time);
+    if (result.error) {
+      alert("Failed to reschedule: " + result.error);
+    }
+    closeMenu();
+    onUpdate?.();
+  };
+
+  // Dismiss overdue recurring task instance
+  const handleDismissOverdue = async () => {
+    const result = await dismissOverdueTask(task.id);
+    if (result.error) {
+      alert("Failed to dismiss: " + result.error);
+    }
+    closeMenu();
+    // Don't call onUpdate - the state is already updated and calling onUpdate would refetch
   };
 
   const confirmDelete = async () => {
@@ -320,8 +347,42 @@ export function TaskContextMenu({ task, onUpdate }: TaskContextMenuProps) {
       );
     }
 
+    const isRecurring = task.recurrence !== "none";
+
     return (
       <View style={styles.menuItems}>
+        {/* Overdue Actions */}
+        {task.is_overdue && (
+          <>
+            <View style={[styles.overdueHeader, { backgroundColor: "rgba(231, 76, 60, 0.1)" }]}>
+              <AlertCircle size={14} color="#E74C3C" />
+              <Text style={styles.overdueHeaderText}>Overdue</Text>
+            </View>
+            
+            {isRecurring ? (
+              // Recurring task - just dismiss
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleDismissOverdue}
+              >
+                <XCircle size={14} color="#E74C3C" />
+                <Text style={[styles.menuItemText, { color: "#E74C3C" }]}>Dismiss (skip this instance)</Text>
+              </TouchableOpacity>
+            ) : (
+              // Non-recurring - offer reschedule
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={handleRescheduleToTomorrow}
+              >
+                <CalendarPlus size={14} color="#3B82F6" />
+                <Text style={[styles.menuItemText, { color: "#3B82F6" }]}>Reschedule to tomorrow</Text>
+              </TouchableOpacity>
+            )}
+            
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          </>
+        )}
+
         <TouchableOpacity
           style={styles.menuItem}
           onPress={() => setViewMode("edit")}
@@ -1137,6 +1198,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     color: "#FFFFFF",
+  },
+  overdueHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
+    borderRadius: 4,
+    marginHorizontal: 4,
+    marginTop: 4,
+  },
+  overdueHeaderText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#E74C3C",
   },
 });
 

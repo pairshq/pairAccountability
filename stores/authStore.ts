@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import type { Profile } from "@/types";
+import type { Database } from "@/types/database";
+
+type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 
 interface AuthState {
   user: { id: string; email: string } | null;
@@ -143,9 +146,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { user } = get();
     if (!user) return { error: "Not authenticated" };
 
+    // Build update payload with only allowed fields
+    const updatePayload: ProfileUpdate = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.username !== undefined) updatePayload.username = updates.username;
+    if (updates.full_name !== undefined) updatePayload.full_name = updates.full_name;
+    if (updates.avatar_url !== undefined) updatePayload.avatar_url = updates.avatar_url;
+    if (updates.timezone !== undefined) updatePayload.timezone = updates.timezone;
+
     const { error } = await supabase
       .from("profiles")
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(updatePayload)
       .eq("id", user.id);
 
     if (error) {

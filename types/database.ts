@@ -36,6 +36,7 @@ export interface Database {
           timezone?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       goals: {
         Row: {
@@ -91,6 +92,7 @@ export interface Database {
           is_active?: boolean;
           updated_at?: string;
         };
+        Relationships: [];
       };
       check_ins: {
         Row: {
@@ -115,6 +117,7 @@ export interface Database {
           status?: "completed" | "missed" | "skipped";
           reflection?: string | null;
         };
+        Relationships: [];
       };
       accountability_pairs: {
         Row: {
@@ -137,6 +140,7 @@ export interface Database {
           status?: "pending" | "accepted" | "declined";
           updated_at?: string;
         };
+        Relationships: [];
       };
       groups: {
         Row: {
@@ -162,6 +166,7 @@ export interface Database {
           description?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       group_members: {
         Row: {
@@ -181,6 +186,7 @@ export interface Database {
         Update: {
           role?: "admin" | "member";
         };
+        Relationships: [];
       };
       group_messages: {
         Row: {
@@ -202,6 +208,7 @@ export interface Database {
         Update: {
           content?: string;
         };
+        Relationships: [];
       };
       notifications: {
         Row: {
@@ -227,6 +234,7 @@ export interface Database {
         Update: {
           is_read?: boolean;
         };
+        Relationships: [];
       };
       tasks: {
         Row: {
@@ -274,6 +282,7 @@ export interface Database {
           completed_at?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       labels: {
         Row: {
@@ -296,6 +305,7 @@ export interface Database {
           name?: string;
           color?: string;
         };
+        Relationships: [];
       };
       task_labels: {
         Row: {
@@ -310,7 +320,67 @@ export interface Database {
           task_id?: string;
           label_id?: string;
         };
+        Relationships: [];
       };
+      dismissed_task_instances: {
+        Row: {
+          id: string;
+          user_id: string;
+          task_id: string;
+          instance_date: string;
+          dismissed_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          task_id: string;
+          instance_date: string;
+          dismissed_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          task_id?: string;
+          instance_date?: string;
+        };
+        Relationships: [];
+      };
+      completed_task_instances: {
+        Row: {
+          id: string;
+          user_id: string;
+          task_id: string;
+          instance_date: string;
+          completed_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          task_id: string;
+          instance_date: string;
+          completed_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          task_id?: string;
+          instance_date?: string;
+          completed_at?: string;
+        };
+        Relationships: [];
+      };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      [_ in never]: never;
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }
@@ -331,4 +401,3 @@ export type Label = Database["public"]["Tables"]["labels"]["Row"];
 export type LabelInsert = Database["public"]["Tables"]["labels"]["Insert"];
 export type LabelUpdate = Database["public"]["Tables"]["labels"]["Update"];
 export type TaskLabel = Database["public"]["Tables"]["task_labels"]["Row"];
-

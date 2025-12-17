@@ -9,13 +9,29 @@ import {
   Modal,
   TextInput,
   Alert,
+  Image,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Plus, Users, X, Search, UserPlus, ChevronRight, Hash } from "lucide-react-native";
+import { Plus, Users, X, Search, UserPlus, Sparkles, ArrowRight, MessageCircle, Camera, Lock, Eye, EyeOff, Wifi } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGroupStore } from "@/stores/groupStore";
 import { useResponsive } from "@/hooks/useResponsive";
+
+const GRADIENT_COLORS = [
+  ["#9333EA", "#EC4899", "#EF4444"],
+  ["#3B82F6", "#06B6D4", "#14B8A6"],
+  ["#374151", "#1F2937", "#000000"],
+  ["#F97316", "#EF4444", "#EC4899"],
+  ["#F59E0B", "#EAB308", "#84CC16"],
+  ["#6366F1", "#8B5CF6", "#EC4899"],
+];
+
+const getGradientColor = (index: number) => {
+  return GRADIENT_COLORS[index % GRADIENT_COLORS.length][0];
+};
 
 export default function GroupsScreen() {
   const colors = useColors();
@@ -28,14 +44,31 @@ export default function GroupsScreen() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
+  const [groupAvatar, setGroupAvatar] = useState<string | null>(null);
+  const [customInviteCode, setCustomInviteCode] = useState("");
+  const [groupPassword, setGroupPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
+  const [showJoinPassword, setShowJoinPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredGroups = groups.filter(g =>
+    g.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   useEffect(() => {
+    console.log("Groups screen - user:", user?.id);
+    console.log("Groups screen - groups:", groups);
     if (user) {
       fetchGroups(user.id);
     }
   }, [user]);
+
+  useEffect(() => {
+    console.log("Groups updated:", groups.length, groups);
+  }, [groups]);
 
   const handleRefresh = () => {
     if (user) {
@@ -43,15 +76,39 @@ export default function GroupsScreen() {
     }
   };
 
+  const generateInviteCode = () => {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setGroupAvatar(result.assets[0].uri);
+    }
+  };
+
   const handleCreateGroup = async () => {
     if (!groupName.trim() || !user) return;
+    if (!customInviteCode.trim()) {
+      Alert.alert("Error", "Please enter a Group ID");
+      return;
+    }
 
     setIsSubmitting(true);
-    const { error } = await createGroup(
-      groupName.trim(),
-      groupDescription.trim() || null,
-      user.id
-    );
+    const { error, group } = await createGroup({
+      name: groupName.trim(),
+      description: groupDescription.trim() || null,
+      avatarUri: groupAvatar,
+      inviteCode: customInviteCode.trim(),
+      password: groupPassword.trim() || null,
+      userId: user.id,
+    });
     setIsSubmitting(false);
 
     if (error) {
@@ -60,6 +117,10 @@ export default function GroupsScreen() {
       setShowCreateModal(false);
       setGroupName("");
       setGroupDescription("");
+      setGroupAvatar(null);
+      setCustomInviteCode("");
+      setGroupPassword("");
+      fetchGroups(user.id);
     }
   };
 
@@ -67,7 +128,7 @@ export default function GroupsScreen() {
     if (!inviteCode.trim() || !user) return;
 
     setIsSubmitting(true);
-    const { error } = await joinGroup(inviteCode.trim(), user.id);
+    const { error } = await joinGroup(inviteCode.trim(), user.id, joinPassword.trim() || undefined);
     setIsSubmitting(false);
 
     if (error) {
@@ -75,53 +136,58 @@ export default function GroupsScreen() {
     } else {
       setShowJoinModal(false);
       setInviteCode("");
+      setJoinPassword("");
     }
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Groups</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-            {groups.length} group{groups.length !== 1 ? "s" : ""}
-          </Text>
-        </View>
-        <View style={styles.headerRight}>
-          {isDesktop && (
-            <View style={[styles.searchContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-              <Search size={18} color={colors.textSecondary} />
+      {/* Hero Section */}
+      <View style={styles.heroSection}>
+        <View style={styles.heroContent}>
+          <View style={styles.heroHeader}>
+            <Text style={styles.heroTitle}>Groups</Text>
+            
+            {/* Search Bar - Centered */}
+            <View style={styles.searchContainer}>
+              <Search size={20} color="#9CA3AF" style={styles.searchIcon} />
               <TextInput
-                style={[styles.searchInput, { color: colors.text }]}
-                placeholder="Search groups"
-                placeholderTextColor={colors.textSecondary}
+                style={[styles.searchInput, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                placeholder="Search for groups..."
+                placeholderTextColor="#9CA3AF"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
-          )}
-          <TouchableOpacity
-            onPress={() => setShowJoinModal(true)}
-            style={[styles.secondaryButton, { borderColor: colors.border }]}
-          >
-            <UserPlus size={18} color={colors.text} />
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Join</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowCreateModal(true)}
-            style={styles.primaryButton}
-          >
-            <Plus size={20} color="#FFFFFF" />
-            <Text style={styles.primaryButtonText}>Create</Text>
-          </TouchableOpacity>
+
+            <View style={styles.heroButtons}>
+              <TouchableOpacity
+                onPress={() => setShowJoinModal(true)}
+                style={styles.heroSecondaryButton}
+                activeOpacity={0.8}
+              >
+                <UserPlus size={18} color="#FFFFFF" />
+                <Text style={styles.heroSecondaryButtonText}>Join</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowCreateModal(true)}
+                style={styles.heroPrimaryButton}
+                activeOpacity={0.8}
+              >
+                <Plus size={20} color="#000000" />
+                <Text style={styles.heroPrimaryButtonText}>Create Group</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </View>
 
+      {/* Groups Section */}
       <ScrollView
         style={styles.content}
-        contentContainerStyle={[
-          styles.scrollContent,
-          isDesktop && styles.scrollContentDesktop,
-        ]}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -131,93 +197,76 @@ export default function GroupsScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {groups.length > 0 ? (
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Groups</Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            {filteredGroups.length} {filteredGroups.length === 1 ? "group" : "groups"} available
+          </Text>
+        </View>
+
+        {filteredGroups.length > 0 ? (
           <View style={[styles.groupsGrid, isDesktop && styles.groupsGridDesktop]}>
-            {groups.map((group) => (
+            {filteredGroups.map((group, index) => (
               <TouchableOpacity
                 key={group.id}
                 onPress={() => router.push(`/group/${group.id}`)}
                 style={[
                   styles.groupCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                  isDesktop && styles.groupCardDesktop,
+                  { backgroundColor: colors.isDark ? "#1A1A1A" : "#F9FAFB", borderColor: colors.isDark ? "#2A2A2A" : "#E5E7EB" },
                 ]}
                 activeOpacity={0.7}
               >
                 <View style={styles.cardHeader}>
-                  <View style={[styles.groupIcon, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-                    <Users size={20} color={colors.textSecondary} />
+                  {/* Group Avatar */}
+                  <View style={styles.avatarContainer}>
+                    {group.avatar_url ? (
+                      <Image source={{ uri: group.avatar_url }} style={styles.groupAvatar} />
+                    ) : (
+                      <View style={[styles.groupAvatar, { backgroundColor: getGradientColor(index) }]}>
+                        <Users size={24} color="#FFFFFF" />
+                      </View>
+                    )}
                   </View>
+
+                  {/* Group Info */}
                   <View style={styles.groupInfo}>
                     <Text style={[styles.groupName, { color: colors.text }]} numberOfLines={1}>
                       {group.name}
                     </Text>
-                    <Text style={[styles.memberCount, { color: colors.textSecondary }]}>
-                      {group.member_count} member{group.member_count !== 1 ? "s" : ""}
+                    <Text style={[styles.lastMessage, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {group.description || "No description"}
                     </Text>
                   </View>
-                  <ChevronRight size={20} color={colors.textSecondary} />
                 </View>
-                
-                {group.description && (
-                  <Text
-                    style={[styles.groupDescription, { color: colors.textSecondary }]}
-                    numberOfLines={2}
-                  >
-                    {group.description}
-                  </Text>
-                )}
 
-                <View style={styles.cardStats}>
-                  <View style={[styles.statItem, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-                    <Text style={[styles.statValue, { color: colors.text }]}>
-                      {group.active_goals_count}
-                    </Text>
-                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                      Active Goals
-                    </Text>
-                  </View>
-                  <View style={[styles.statItem, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-                    <Text style={[styles.statValue, { color: colors.text }]}>
+                <View style={styles.cardFooter}>
+                  <View style={styles.memberStats}>
+                    <Users size={14} color={colors.textSecondary} />
+                    <Text style={[styles.memberCount, { color: colors.textSecondary }]}>
                       {group.member_count}
                     </Text>
-                    <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                      Members
+                    <Text style={[styles.statDot, { color: colors.textSecondary }]}>•</Text>
+                    <Wifi size={14} color="#22C55E" />
+                    <Text style={[styles.activeGoals, { color: "#22C55E" }]}>
+                      {group.online_count || 0} online
                     </Text>
                   </View>
+
+                  {/* Enter Button */}
+                  <TouchableOpacity style={styles.enterButton}>
+                    <ArrowRight size={18} color={colors.text} />
+                  </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
         ) : (
           <View style={styles.emptyState}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-              <Users size={40} color={colors.textSecondary} strokeWidth={1.5} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              No groups yet
-            </Text>
+            <MessageCircle size={80} color={colors.textSecondary} style={styles.emptyIcon} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No groups found</Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Create a group to collaborate with friends or join an existing one with an invite code.
+              Try a different search or create a new group
             </Text>
-            <View style={styles.emptyActions}>
-              <TouchableOpacity
-                onPress={() => setShowCreateModal(true)}
-                style={styles.emptyPrimaryButton}
-              >
-                <Plus size={20} color="#FFFFFF" />
-                <Text style={styles.emptyPrimaryButtonText}>Create Group</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setShowJoinModal(true)}
-                style={[styles.emptySecondaryButton, { borderColor: colors.border }]}
-              >
-                <Hash size={18} color={colors.text} />
-                <Text style={[styles.emptySecondaryButtonText, { color: colors.text }]}>
-                  Join with Code
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         )}
       </ScrollView>
@@ -230,62 +279,175 @@ export default function GroupsScreen() {
         onRequestClose={() => setShowCreateModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Create group</Text>
+          <ScrollView 
+            style={styles.modalScrollView}
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={[styles.modalContainer, { backgroundColor: colors.isDark ? "#1A1A1A" : "#FFFFFF" }]}>
               <TouchableOpacity 
-                onPress={() => setShowCreateModal(false)}
-                style={[styles.modalClose, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
+                style={styles.modalClose}
+                onPress={() => {
+                  setShowCreateModal(false);
+                  setGroupName("");
+                  setGroupDescription("");
+                  setGroupAvatar(null);
+                  setCustomInviteCode("");
+                  setGroupPassword("");
+                }}
               >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
+                <X size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconBox}>
+                <Plus size={24} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Create Group</Text>
             </View>
             
-            <View style={styles.modalContent}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Group name</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              Set up your accountability group
+            </Text>
+
+            {/* Avatar Picker */}
+            <TouchableOpacity style={styles.avatarPicker} onPress={pickImage}>
+              {groupAvatar ? (
+                <Image source={{ uri: groupAvatar }} style={styles.avatarPreview} />
+              ) : (
+                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6" }]}>
+                  <Camera size={32} color={colors.textSecondary} />
+                  <Text style={[styles.avatarPlaceholderText, { color: colors.textSecondary }]}>
+                    Add Photo
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Group Name */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Group Name *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  { 
+                    backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
+                    color: colors.text,
+                    borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
+                  }
+                ]}
+                placeholder="e.g., Morning Runners"
+                placeholderTextColor={colors.textSecondary}
+                value={groupName}
+                onChangeText={setGroupName}
+              />
+            </View>
+
+            {/* Description */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Description</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  styles.modalTextarea,
+                  { 
+                    backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
+                    color: colors.text,
+                    borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
+                  }
+                ]}
+                placeholder="What's this group about?"
+                placeholderTextColor={colors.textSecondary}
+                value={groupDescription}
+                onChangeText={setGroupDescription}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+
+            {/* Group ID (Invite Code) */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Group ID *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  styles.codeInput,
+                  { 
+                    backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
+                    color: colors.text,
+                    borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
+                  }
+                ]}
+                placeholder="MYGROUP"
+                placeholderTextColor={colors.textSecondary}
+                value={customInviteCode}
+                onChangeText={(text) => setCustomInviteCode(text.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+                autoCapitalize="characters"
+                maxLength={12}
+              />
+              <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
+                This is how others will find your group
+              </Text>
+            </View>
+
+            {/* Password (Required) */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>
+                Password *
+              </Text>
+              <View style={styles.passwordInputContainer}>
+                <Lock size={18} color={colors.textSecondary} style={styles.passwordIcon} />
                 <TextInput
                   style={[
                     styles.modalInput,
+                    styles.passwordInput,
                     { 
-                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
                       color: colors.text,
+                      borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
                     }
                   ]}
-                  placeholder="Enter group name"
+                  placeholder="Set a password for this group"
                   placeholderTextColor={colors.textSecondary}
-                  value={groupName}
-                  onChangeText={setGroupName}
+                  value={groupPassword}
+                  onChangeText={setGroupPassword}
+                  secureTextEntry={!showPassword}
                 />
+                <TouchableOpacity 
+                  style={styles.passwordToggle}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} color={colors.textSecondary} />
+                  ) : (
+                    <Eye size={18} color={colors.textSecondary} />
+                  )}
+                </TouchableOpacity>
               </View>
+            </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
-                <TextInput
-                  style={[
-                    styles.modalInput,
-                    styles.modalTextarea,
-                    { 
-                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
-                      color: colors.text,
-                    }
-                  ]}
-                  placeholder="What's this group about?"
-                  placeholderTextColor={colors.textSecondary}
-                  value={groupDescription}
-                  onChangeText={setGroupDescription}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </View>
-
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowCreateModal(false);
+                  setGroupName("");
+                  setGroupDescription("");
+                  setGroupAvatar(null);
+                  setCustomInviteCode("");
+                  setGroupPassword("");
+                }}
+                style={[styles.modalCancelButton, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E5E7EB" }]}
+              >
+                <Text style={[styles.modalCancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleCreateGroup}
-                disabled={!groupName.trim() || isSubmitting}
+                disabled={!groupName.trim() || !customInviteCode.trim() || !groupPassword.trim() || isSubmitting}
                 style={[
                   styles.modalButton,
-                  (!groupName.trim() || isSubmitting) && styles.modalButtonDisabled,
+                  (!groupName.trim() || !customInviteCode.trim() || !groupPassword.trim() || isSubmitting) && styles.modalButtonDisabled,
                 ]}
               >
                 <Text style={styles.modalButtonText}>
@@ -294,6 +456,7 @@ export default function GroupsScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -304,48 +467,103 @@ export default function GroupsScreen() {
         transparent
         onRequestClose={() => setShowJoinModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.modalOverlay, { justifyContent: "center" }]}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.isDark ? "#1A1A1A" : "#FFFFFF" }]}>
+            <TouchableOpacity 
+              style={styles.modalClose}
+              onPress={() => {
+                setShowJoinModal(false);
+                setInviteCode("");
+                setJoinPassword("");
+              }}
+            >
+              <X size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Join group</Text>
-              <TouchableOpacity 
-                onPress={() => setShowJoinModal(false)}
-                style={[styles.modalClose, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
+              <View style={styles.modalIconBox}>
+                <UserPlus size={24} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Join Group</Text>
             </View>
             
-            <View style={styles.modalContent}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Invite code</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>
+              Enter the group ID to join
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Group ID *</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  styles.codeInput,
+                  { 
+                    backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
+                    color: colors.text,
+                    borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
+                  }
+                ]}
+                placeholder="GROUPID"
+                placeholderTextColor={colors.textSecondary}
+                value={inviteCode}
+                onChangeText={(text) => setInviteCode(text.toUpperCase())}
+                autoCapitalize="characters"
+                maxLength={12}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>
+                Password *
+              </Text>
+              <View style={styles.passwordInputContainer}>
+                <Lock size={18} color={colors.textSecondary} style={styles.passwordIcon} />
                 <TextInput
                   style={[
                     styles.modalInput,
-                    styles.codeInput,
+                    styles.passwordInput,
                     { 
-                      backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5",
+                      backgroundColor: colors.isDark ? "#2A2A2A" : "#F3F4F6",
                       color: colors.text,
+                      borderColor: colors.isDark ? "#3A3A3A" : "#E5E7EB",
                     }
                   ]}
-                  placeholder="XXXXXX"
+                  placeholder="Enter group password"
                   placeholderTextColor={colors.textSecondary}
-                  value={inviteCode}
-                  onChangeText={setInviteCode}
-                  autoCapitalize="characters"
-                  maxLength={6}
+                  value={joinPassword}
+                  onChangeText={setJoinPassword}
+                  secureTextEntry={!showJoinPassword}
                 />
-                <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
-                  Enter the 6-character invite code
-                </Text>
+                <TouchableOpacity 
+                  style={styles.passwordToggle}
+                  onPress={() => setShowJoinPassword(!showJoinPassword)}
+                >
+                  {showJoinPassword ? (
+                    <EyeOff size={18} color={colors.textSecondary} />
+                  ) : (
+                    <Eye size={18} color={colors.textSecondary} />
+                  )}
+                </TouchableOpacity>
               </View>
+            </View>
 
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowJoinModal(false);
+                  setInviteCode("");
+                  setJoinPassword("");
+                }}
+                style={[styles.modalCancelButton, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E5E7EB" }]}
+              >
+                <Text style={[styles.modalCancelButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleJoinGroup}
-                disabled={inviteCode.trim().length !== 6 || isSubmitting}
+                disabled={!inviteCode.trim() || !joinPassword.trim() || isSubmitting}
                 style={[
                   styles.modalButton,
-                  (inviteCode.trim().length !== 6 || isSubmitting) && styles.modalButtonDisabled,
+                  (!inviteCode.trim() || !joinPassword.trim() || isSubmitting) && styles.modalButtonDisabled,
                 ]}
               >
                 <Text style={styles.modalButtonText}>
@@ -364,144 +582,191 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  heroSection: {
+    backgroundColor: "#0A0A0A",
+    paddingHorizontal: 32,
+    paddingTop: 60,
+    paddingBottom: 40,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+  },
+  heroContent: {
+    maxWidth: 1280,
+    width: "100%",
+    alignSelf: "center",
+  },
+  heroHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    borderBottomWidth: 1,
+    gap: 24,
   },
-  headerLeft: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  headerRight: {
+  heroTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    marginBottom: 8,
   },
-  searchContainer: {
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+    minWidth: 100,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: "#9CA3AF",
+  },
+  heroButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  heroSecondaryButton: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  heroSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  heroPrimaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: "#FFFFFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  heroPrimaryButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#000000",
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    gap: 12,
-    minWidth: 240,
+    maxWidth: 480,
+  },
+  searchIcon: {
+    marginRight: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-  },
-  secondaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  primaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#000000",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  primaryButtonText: {
     color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
   },
   content: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-  },
-  scrollContentDesktop: {
     paddingHorizontal: 32,
+    paddingVertical: 48,
+    maxWidth: 1280,
+    width: "100%",
+    alignSelf: "center",
+  },
+  sectionHeader: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 15,
   },
   groupsGrid: {
-    gap: 16,
+    gap: 20,
   },
   groupsGridDesktop: {
     flexDirection: "row",
     flexWrap: "wrap",
   },
   groupCard: {
-    borderWidth: 1,
+    borderWidth: 2,
     borderRadius: 16,
     padding: 20,
-  },
-  groupCardDesktop: {
-    width: "calc(50% - 8px)",
-    minWidth: 320,
-    maxWidth: 500,
+    minWidth: 280,
+    flexGrow: 1,
+    flexBasis: "30%",
+    maxWidth: 400,
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  groupIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+  avatarContainer: {
+    position: "relative",
+  },
+  groupAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   groupInfo: {
     flex: 1,
+    minWidth: 0,
   },
   groupName: {
-    fontSize: 17,
-    fontWeight: "600",
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
   },
-  memberCount: {
+  lastMessage: {
     fontSize: 13,
   },
-  groupDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  cardStats: {
+  cardFooter: {
     flexDirection: "row",
-    gap: 12,
-  },
-  statItem: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
     alignItems: "center",
+    justifyContent: "space-between",
   },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 2,
+  memberStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
-  statLabel: {
+  memberCount: {
     fontSize: 12,
+  },
+  statDot: {
+    fontSize: 12,
+  },
+  activeGoals: {
+    fontSize: 12,
+  },
+  enterButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   emptyState: {
     alignItems: "center",
@@ -509,81 +774,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   emptyIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: "center",
-    justifyContent: "center",
+    opacity: 0.2,
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "600",
     marginBottom: 8,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 16,
     textAlign: "center",
-    marginBottom: 32,
-    maxWidth: 320,
-    lineHeight: 22,
-  },
-  emptyActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  emptyPrimaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#000000",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  emptyPrimaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  emptySecondaryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  emptySecondaryButtonText: {
-    fontSize: 15,
-    fontWeight: "500",
+    marginTop: 8,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    padding: 16,
   },
   modalContainer: {
     width: "100%",
-    maxWidth: 440,
-    borderRadius: 20,
-    overflow: "hidden",
+    maxWidth: 480,
+    borderRadius: 24,
+    padding: 40,
   },
   modalHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    padding: 20,
-    paddingBottom: 16,
+    gap: 12,
+    marginBottom: 24,
+  },
+  modalIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#000000",
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 28,
+    fontWeight: "700",
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    marginBottom: 24,
   },
   modalClose: {
+    position: "absolute",
+    top: 16,
+    right: 16,
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -591,8 +833,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   modalContent: {
-    padding: 20,
-    paddingTop: 0,
+    gap: 0,
   },
   inputGroup: {
     marginBottom: 20,
@@ -603,14 +844,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   modalInput: {
-    fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 12,
+    fontSize: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
   },
   modalTextarea: {
     minHeight: 100,
-    paddingTop: 14,
+    paddingTop: 16,
   },
   codeInput: {
     fontSize: 20,
@@ -623,19 +866,88 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
+  modalActions: {
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 32,
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: "#E5E7EB",
+    paddingVertical: 16,
+    borderRadius: 50,
+    alignItems: "center",
+  },
+  modalCancelButtonText: {
+    color: "#000000",
+    fontSize: 16,
+    fontWeight: "700",
+  },
   modalButton: {
+    flex: 1,
     backgroundColor: "#000000",
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 50,
     alignItems: "center",
-    marginTop: 8,
   },
   modalButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.3,
   },
   modalButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  modalScrollView: {
+    flex: 1,
+    width: "100%",
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  avatarPicker: {
+    alignSelf: "center",
+    marginBottom: 24,
+  },
+  avatarPreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#9CA3AF",
+  },
+  avatarPlaceholderText: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  passwordInputContainer: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  passwordIcon: {
+    position: "absolute",
+    left: 16,
+    zIndex: 1,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingLeft: 44,
+    paddingRight: 44,
+  },
+  passwordToggle: {
+    position: "absolute",
+    right: 16,
+    zIndex: 1,
   },
 });

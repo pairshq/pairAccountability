@@ -21,6 +21,9 @@ interface TaskState {
   tasks: TaskWithDetails[];
   isLoading: boolean;
   error: string | null;
+  dismissedInstances: Set<string>; // Track dismissed recurring instances
+  completedInstances: Map<string, string>; // Track completed recurring instances (id -> completed_at)
+  pendingOperations: Set<string>; // Track tasks with pending operations to prevent double-clicks
   
   // Actions
   fetchTasks: (userId: string) => Promise<void>;
@@ -30,6 +33,9 @@ interface TaskState {
   uncompleteTask: (taskId: string) => Promise<{ error: string | null }>;
   deleteTask: (taskId: string) => Promise<{ error: string | null }>;
   rescheduleTask: (taskId: string, newDate: string, newTime?: string | null) => Promise<{ error: string | null }>;
+  dismissOverdueTask: (taskId: string) => Promise<{ error: string | null }>;
+  loadDismissedInstances: () => Promise<void>;
+  loadCompletedInstances: () => Promise<void>;
   getTasksForDate: (dateStr: string) => TaskWithDetails[];
   getTasksWithNoDate: () => TaskWithDetails[];
 }
@@ -54,6 +60,7 @@ const isWeekday = (date: Date): boolean => {
 
 // Helper to enrich task with computed properties
 const enrichTask = (task: TaskDB, instanceDate?: string): TaskWithDetails => {
+  const now = new Date();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
@@ -66,7 +73,20 @@ const enrichTask = (task: TaskDB, instanceDate?: string): TaskWithDetails => {
     taskDate.setHours(0, 0, 0, 0);
     
     isToday = taskDate.getTime() === today.getTime();
-    isOverdue = taskDate < today && task.status === "pending";
+    
+    // Check if overdue by date
+    if (taskDate < today && task.status === "pending") {
+      isOverdue = true;
+    }
+    // Check if overdue by time (for today's tasks)
+    else if (isToday && task.due_time && task.status === "pending") {
+      const [hours, minutes] = task.due_time.split(":").map(Number);
+      const taskDateTime = new Date(effectiveDate);
+      taskDateTime.setHours(hours, minutes, 0, 0);
+      if (now > taskDateTime) {
+        isOverdue = true;
+      }
+    }
   }
   
   return {
@@ -94,8 +114,8 @@ const shouldOccurOnDate = (
   // Task can't occur before its start date
   if (targetDate < startDate) return false;
   
-  // If it's the original date, it's handled separately
-  if (targetDate.getTime() === startDate.getTime()) return false;
+  // The original date always counts as an occurrence
+  if (targetDate.getTime() === startDate.getTime()) return true;
   
   switch (recurrence) {
     case "daily":
@@ -128,26 +148,19 @@ const shouldOccurOnDate = (
 const generateAllTasksForRange = (
   baseTasks: TaskDB[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  dismissedInstances: Set<string> = new Set()
 ): TaskWithDetails[] => {
   const allTasks: TaskWithDetails[] = [];
   const processedIds = new Set<string>();
   
-  // First, add all non-recurring tasks and the original recurring tasks
+  // First, add all non-recurring tasks
   for (const task of baseTasks) {
-    const enriched = enrichTask(task);
-    
     if (task.recurrence === "none" || !task.recurrence) {
+      const enriched = enrichTask(task);
       allTasks.push(enriched);
     } else {
-      // Add the original recurring task on its start date
-      if (task.due_date) {
-        const taskDate = new Date(task.due_date);
-        taskDate.setHours(0, 0, 0, 0);
-        if (taskDate >= startDate && taskDate <= endDate) {
-          allTasks.push(enriched);
-        }
-      }
+      // Track recurring tasks for later processing
       processedIds.add(task.id);
     }
   }
@@ -164,10 +177,17 @@ const generateAllTasksForRange = (
     
     for (const task of recurringTasks) {
       if (shouldOccurOnDate(task, new Date(currentDate), task.recurrence as RecurrenceType)) {
+        const instanceId = `${task.id}_${dateStr}`;
+        
+        // Skip if this instance was dismissed
+        if (dismissedInstances.has(instanceId)) {
+          continue;
+        }
+        
         // Create a virtual instance
         const instance: TaskWithDetails = {
           ...enrichTask(task, dateStr),
-          id: `${task.id}_${dateStr}`,
+          id: instanceId,
           due_date: dateStr,
           is_recurring_instance: true,
           original_task_id: task.id,
@@ -212,6 +232,9 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   tasks: [],
   isLoading: false,
   error: null,
+  dismissedInstances: new Set<string>(),
+  completedInstances: new Map<string, string>(),
+  pendingOperations: new Set<string>(),
 
   fetchTasks: async (userId: string) => {
     if (!isSupabaseConfigured) {
@@ -222,6 +245,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set({ isLoading: true, error: null });
     
     try {
+      // Load dismissed and completed instances from database first
+      await get().loadDismissedInstances();
+      await get().loadCompletedInstances();
+      
       // Fetch tasks with their labels
       const { data: tasksData, error: tasksError } = await supabase
         .from("tasks")
@@ -263,7 +290,22 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const endDate = new Date(today);
       endDate.setDate(endDate.getDate() + 90);
       
-      const allTasks = generateAllTasksForRange(tasksWithLabels, startDate, endDate);
+      const { dismissedInstances, completedInstances } = get();
+      let allTasks = generateAllTasksForRange(tasksWithLabels, startDate, endDate, dismissedInstances);
+      
+      // Apply completed instances state to recurring tasks
+      if (completedInstances.size > 0) {
+        allTasks = allTasks.map(task => {
+          if (task.is_recurring_instance && completedInstances.has(task.id)) {
+            return {
+              ...task,
+              status: "completed" as const,
+              completed_at: completedInstances.get(task.id) || null,
+            };
+          }
+          return task;
+        });
+      }
       
       set({ tasks: sortTasks(allTasks), isLoading: false });
     } catch (error: any) {
@@ -352,22 +394,72 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return { error: "Supabase not configured" };
     }
 
+    // Prevent double-clicks - check if operation is already pending
+    const { pendingOperations } = get();
+    if (pendingOperations.has(taskId)) {
+      console.log("Task completion already in progress:", taskId);
+      return { error: null };
+    }
+
+    // Mark operation as pending
+    set(state => ({
+      pendingOperations: new Set(state.pendingOperations).add(taskId),
+    }));
+
     const isInstance = taskId.includes("_");
     const realTaskId = isInstance ? taskId.split("_")[0] : taskId;
     const now = new Date().toISOString();
 
     try {
       if (isInstance) {
-        // For recurring instances, just update UI state (completion is per-instance)
-        set(state => ({
-          tasks: state.tasks.map(t => 
-            t.id === taskId 
-              ? { ...t, status: "completed" as const, completed_at: now }
-              : t
-          ),
-        }));
+        const instanceDate = taskId.split("_")[1];
+        
+        // Optimistically update UI first
+        set(state => {
+          const newCompleted = new Map(state.completedInstances);
+          newCompleted.set(taskId, now);
+          const newPending = new Set(state.pendingOperations);
+          newPending.delete(taskId);
+          return {
+            tasks: state.tasks.map(t => 
+              t.id === taskId 
+                ? { ...t, status: "completed" as const, completed_at: now }
+                : t
+            ),
+            completedInstances: newCompleted,
+            pendingOperations: newPending,
+          };
+        });
+        
+        // Persist to database
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error: dbError } = await supabase
+            .from("completed_task_instances")
+            .upsert({
+              user_id: user.id,
+              task_id: realTaskId,
+              instance_date: instanceDate,
+              completed_at: now,
+            }, { onConflict: "task_id,instance_date" });
+          
+          if (dbError) {
+            console.error("Failed to persist recurring completion:", dbError);
+            // Don't revert UI - the local state is still valid for this session
+          }
+        }
+        
         return { error: null };
       }
+
+      // Optimistically update UI first
+      set(state => ({
+        tasks: state.tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, status: "completed" as const, completed_at: now }
+            : t
+        ),
+      }));
 
       const { data, error } = await supabase
         .from("tasks")
@@ -382,13 +474,29 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
       if (error) throw error;
 
-      if (data) {
-        await get().fetchTasks(data.user_id);
-      }
+      // Clear pending operation
+      set(state => {
+        const newPending = new Set(state.pendingOperations);
+        newPending.delete(taskId);
+        return { pendingOperations: newPending };
+      });
 
       return { error: null };
     } catch (error: any) {
       console.error("Error completing task:", error);
+      // Revert optimistic update on error
+      set(state => {
+        const newPending = new Set(state.pendingOperations);
+        newPending.delete(taskId);
+        return {
+          tasks: state.tasks.map(t => 
+            t.id === taskId 
+              ? { ...t, status: "pending" as const, completed_at: null }
+              : t
+          ),
+          pendingOperations: newPending,
+        };
+      });
       return { error: error.message || "Failed to complete task" };
     }
   },
@@ -398,20 +506,69 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return { error: "Supabase not configured" };
     }
 
+    // Prevent double-clicks - check if operation is already pending
+    const { pendingOperations } = get();
+    if (pendingOperations.has(taskId)) {
+      console.log("Task uncomplete already in progress:", taskId);
+      return { error: null };
+    }
+
+    // Mark operation as pending
+    set(state => ({
+      pendingOperations: new Set(state.pendingOperations).add(taskId),
+    }));
+
     const isInstance = taskId.includes("_");
     const realTaskId = isInstance ? taskId.split("_")[0] : taskId;
 
     try {
       if (isInstance) {
-        set(state => ({
-          tasks: state.tasks.map(t => 
-            t.id === taskId 
-              ? { ...t, status: "pending" as const, completed_at: null }
-              : t
-          ),
-        }));
+        const instanceDate = taskId.split("_")[1];
+        
+        // Optimistically update UI first
+        set(state => {
+          const newCompleted = new Map(state.completedInstances);
+          newCompleted.delete(taskId);
+          const newPending = new Set(state.pendingOperations);
+          newPending.delete(taskId);
+          return {
+            tasks: state.tasks.map(t => 
+              t.id === taskId 
+                ? { ...t, status: "pending" as const, completed_at: null }
+                : t
+            ),
+            completedInstances: newCompleted,
+            pendingOperations: newPending,
+          };
+        });
+        
+        // Remove from database
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error: dbError } = await supabase
+            .from("completed_task_instances")
+            .delete()
+            .eq("user_id", user.id)
+            .eq("task_id", realTaskId)
+            .eq("instance_date", instanceDate);
+          
+          if (dbError) {
+            console.error("Failed to remove recurring completion:", dbError);
+            // Don't revert UI - the local state is still valid for this session
+          }
+        }
+        
         return { error: null };
       }
+
+      // Optimistically update UI first
+      set(state => ({
+        tasks: state.tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, status: "pending" as const, completed_at: null }
+            : t
+        ),
+      }));
 
       const { data, error } = await supabase
         .from("tasks")
@@ -426,13 +583,29 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
       if (error) throw error;
 
-      if (data) {
-        await get().fetchTasks(data.user_id);
-      }
+      // Clear pending operation
+      set(state => {
+        const newPending = new Set(state.pendingOperations);
+        newPending.delete(taskId);
+        return { pendingOperations: newPending };
+      });
 
       return { error: null };
     } catch (error: any) {
       console.error("Error uncompleting task:", error);
+      // Revert optimistic update on error
+      set(state => {
+        const newPending = new Set(state.pendingOperations);
+        newPending.delete(taskId);
+        return {
+          tasks: state.tasks.map(t => 
+            t.id === taskId 
+              ? { ...t, status: "completed" as const, completed_at: new Date().toISOString() }
+              : t
+          ),
+          pendingOperations: newPending,
+        };
+      });
       return { error: error.message || "Failed to uncomplete task" };
     }
   },
@@ -494,6 +667,120 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       updates.due_time = newTime;
     }
     return await get().updateTask(taskId, updates);
+  },
+
+  // Dismiss an overdue recurring task instance (mark as cancelled/missed)
+  dismissOverdueTask: async (taskId: string) => {
+    // For recurring task instances, we just remove them from the view
+    // The actual database task remains, but this instance is dismissed
+    const realTaskId = taskId.includes("_") ? taskId.split("_")[0] : taskId;
+    const instanceDate = taskId.includes("_") ? taskId.split("_")[1] : null;
+    
+    // If it's a recurring instance, save to database and remove from view
+    if (instanceDate) {
+      try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: "Not authenticated" };
+        
+        // Insert into dismissed_task_instances table
+        const { error } = await supabase
+          .from("dismissed_task_instances")
+          .upsert({
+            user_id: user.id,
+            task_id: realTaskId,
+            instance_date: instanceDate,
+          }, { onConflict: "task_id,instance_date" });
+        
+        if (error) {
+          console.error("Failed to save dismissed instance:", error);
+          return { error: error.message };
+        }
+        
+        // Update local state
+        const newDismissed = new Set(get().dismissedInstances);
+        newDismissed.add(taskId);
+        
+        set(state => ({
+          dismissedInstances: newDismissed,
+          tasks: state.tasks.filter(t => t.id !== taskId),
+        }));
+        
+        return { error: null };
+      } catch (e: any) {
+        console.error("Failed to dismiss instance:", e);
+        return { error: e.message };
+      }
+    }
+    
+    // For non-recurring tasks, mark as cancelled
+    return await get().updateTask(realTaskId, { status: "cancelled" });
+  },
+
+  // Load dismissed instances from database
+  loadDismissedInstances: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      // Get dismissed instances from last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { data, error } = await supabase
+        .from("dismissed_task_instances")
+        .select("task_id, instance_date")
+        .eq("user_id", user.id)
+        .gte("instance_date", thirtyDaysAgo.toISOString().split("T")[0]);
+      
+      if (error) {
+        console.error("Failed to load dismissed instances:", error);
+        return;
+      }
+      
+      // Convert to Set of "taskId_date" format
+      const dismissedSet = new Set<string>();
+      (data || []).forEach(item => {
+        dismissedSet.add(`${item.task_id}_${item.instance_date}`);
+      });
+      
+      set({ dismissedInstances: dismissedSet });
+    } catch (e) {
+      console.error("Failed to load dismissed instances:", e);
+    }
+  },
+
+  // Load completed recurring instances from database
+  loadCompletedInstances: async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      
+      // Get completed instances from last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { data, error } = await supabase
+        .from("completed_task_instances")
+        .select("task_id, instance_date, completed_at")
+        .eq("user_id", user.id)
+        .gte("instance_date", thirtyDaysAgo.toISOString().split("T")[0]);
+      
+      if (error) {
+        console.error("Failed to load completed instances:", error);
+        return;
+      }
+      
+      // Convert to Map of "taskId_date" -> completed_at
+      const completedMap = new Map<string, string>();
+      (data || []).forEach(item => {
+        completedMap.set(`${item.task_id}_${item.instance_date}`, item.completed_at);
+      });
+      
+      set({ completedInstances: completedMap });
+    } catch (e) {
+      console.error("Failed to load completed instances:", e);
+    }
   },
 
   getTasksForDate: (dateStr: string) => {

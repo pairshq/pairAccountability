@@ -12,8 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import {
   Search,
-  Bell,
-  User,
   Target,
   CheckCircle2,
   Clock,
@@ -98,29 +96,6 @@ export default function DashboardScreen() {
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerLeft}>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Dashboard</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <View style={[styles.searchContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-              <Search size={18} color={colors.textSecondary} />
-              <TextInput
-                style={[styles.searchInput, { color: colors.text }]}
-                placeholder="Search information"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-            <TouchableOpacity style={[styles.iconButton, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-              <Bell size={20} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.profileButton, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}
-              onPress={() => router.push("/(tabs)/profile")}
-            >
-              <View style={[styles.avatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E0E0E0" }]}>
-                <User size={18} color={colors.text} />
-              </View>
-              <Text style={[styles.profileName, { color: colors.text }]}>{displayName.split(" ")[0]}</Text>
-              <ChevronRight size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
           </View>
         </View>
       )}
@@ -209,35 +184,6 @@ export default function DashboardScreen() {
                 </View>
               </View>
 
-              {/* User Profile Card */}
-              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>User Profile</Text>
-                <View style={styles.profileCardContent}>
-                  <View style={[styles.profileAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
-                    <User size={32} color={colors.textSecondary} />
-                  </View>
-                  <View style={styles.profileInfo}>
-                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Name: </Text>
-                      {displayName}
-                    </Text>
-                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Date of Joining: </Text>
-                      {profile?.created_at
-                        ? new Date(profile.created_at).toLocaleDateString("en-US", {
-                            month: "long",
-                            day: "numeric",
-                            year: "numeric",
-                          })
-                        : "N/A"}
-                    </Text>
-                    <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                      <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Username: </Text>
-                      {profile?.username || "N/A"}
-                    </Text>
-                  </View>
-                </View>
-              </View>
             </View>
 
             {/* Right Column */}
@@ -358,35 +304,6 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            {/* User Profile Card */}
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>User Profile</Text>
-              <View style={styles.profileCardContent}>
-                <View style={[styles.profileAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F5F5F5" }]}>
-                  <User size={32} color={colors.textSecondary} />
-                </View>
-                <View style={styles.profileInfo}>
-                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Name: </Text>
-                    {displayName}
-                  </Text>
-                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Date of Joining: </Text>
-                    {profile?.created_at
-                      ? new Date(profile.created_at).toLocaleDateString("en-US", {
-                          month: "long",
-                          day: "numeric",
-                          year: "numeric",
-                        })
-                      : "N/A"}
-                  </Text>
-                  <Text style={[styles.profileInfoText, { color: colors.text }]}>
-                    <Text style={[styles.profileInfoLabel, { color: colors.textSecondary }]}>Username: </Text>
-                    {profile?.username || "N/A"}
-                  </Text>
-                </View>
-              </View>
-            </View>
 
             {/* Today's Goals Card */}
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -491,7 +408,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 32,
-    paddingVertical: 20,
+    paddingVertical: 28,
     borderBottomWidth: 1,
     borderBottomColor: "#EAEAEA",
   },
@@ -499,7 +416,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "700",
     color: "#000000",
   },
@@ -617,8 +534,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     zIndex: 10,
-    alignItems: "center",
-    justifyContent: "center",
     alignItems: "center",
     justifyContent: "center",
   },

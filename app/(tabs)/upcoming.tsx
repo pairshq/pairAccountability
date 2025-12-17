@@ -8,12 +8,12 @@ import {
   RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, Plus, Circle, CheckCircle2, Clock, Flag, HelpCircle, Repeat } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, Plus, Circle, CheckCircle2, Clock, Flag, HelpCircle, Repeat, X } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useTaskStore, TaskWithDetails } from "@/stores/taskStore";
 import { useResponsive } from "@/hooks/useResponsive";
-import { InlineAddTask, TaskContextMenu, LabelDisplay, TaskFilterBar } from "@/components/ui";
+import { InlineAddTask, TaskContextMenu, LabelDisplay } from "@/components/ui";
 import { searchEventEmitter } from "@/components/ui/Sidebar";
 
 // Helper to get days array starting from today
@@ -63,37 +63,54 @@ export default function UpcomingScreen() {
   const [startDate, setStartDate] = useState(new Date());
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [addingTaskForDate, setAddingTaskForDate] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
+  const [filterPriority, setFilterPriority] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [filterLabelId, setFilterLabelId] = useState<string | null>(null);
 
   const today = new Date();
   const numDays = isDesktop ? 7 : 5;
   const days = getDaysArray(startDate, numDays);
 
-  // Filter function
-  const filterTasks = (taskList: TaskWithDetails[]) => {
-    return taskList.filter(task => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = task.title.toLowerCase().includes(query);
-        const matchesDescription = task.description?.toLowerCase().includes(query);
-        if (!matchesTitle && !matchesDescription) return false;
-      }
-      
-      // Label filter
-      if (filterLabelIds.length > 0) {
-        const taskLabelIds = task.labels?.map(l => l.id) || [];
-        const hasMatchingLabel = filterLabelIds.some(id => taskLabelIds.includes(id));
-        if (!hasMatchingLabel) return false;
-      }
-      
-      return true;
-    });
+  // Apply all filters (priority, search, label)
+  const applyFilters = (taskList: TaskWithDetails[]) => {
+    let filtered = taskList;
+    
+    // Apply priority filter
+    if (filterPriority) {
+      filtered = filtered.filter(t => t.priority === filterPriority);
+    }
+    
+    // Apply search query filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(t => 
+        t.title.toLowerCase().includes(query) ||
+        t.description?.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply label filter
+    if (filterLabelId) {
+      filtered = filtered.filter(t => 
+        t.labels?.some(label => label.id === filterLabelId)
+      );
+    }
+    
+    return filtered;
+  };
+
+  // Check if any filter is active
+  const hasActiveFilter = filterPriority || searchQuery.trim() || filterLabelId;
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilterPriority(null);
+    setSearchQuery("");
+    setFilterLabelId(null);
   };
 
   // Get tasks without a date (Unknown section)
-  const unknownTasks = filterTasks(tasks.filter(t => !t.due_date));
+  const unknownTasks = applyFilters(tasks.filter(t => !t.due_date));
 
   useEffect(() => {
     if (user) {
@@ -101,13 +118,15 @@ export default function UpcomingScreen() {
     }
   }, [user]);
 
-  // Subscribe to command palette events
+  // Subscribe to command palette events for filtering
   useEffect(() => {
     const unsubscribe = searchEventEmitter.subscribe((data) => {
-      if (data.type === "search") {
+      if (data.type === "priority") {
+        setFilterPriority(prev => prev === data.value ? null : data.value);
+      } else if (data.type === "search") {
         setSearchQuery(data.value);
       } else if (data.type === "label") {
-        setFilterLabelIds([data.value]);
+        setFilterLabelId(prev => prev === data.value ? null : data.value);
       }
     });
     return unsubscribe;
@@ -146,7 +165,7 @@ export default function UpcomingScreen() {
   // Get tasks for a specific date
   const getTasksForDate = (date: Date): TaskWithDetails[] => {
     const dateStr = date.toISOString().split("T")[0];
-    return filterTasks(tasks.filter((task) => task.due_date === dateStr));
+    return applyFilters(tasks.filter((task) => task.due_date === dateStr));
   };
 
   const handleTaskUpdate = () => {
@@ -157,12 +176,15 @@ export default function UpcomingScreen() {
 
   const TaskItem = ({ task }: { task: TaskWithDetails }) => {
     const isCompleted = task.status === "completed";
+    const isOverdue = task.is_overdue && !isCompleted;
+    const isRecurring = task.recurrence !== "none";
     
     return (
       <View
         style={[
           styles.taskItem,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          { backgroundColor: colors.card, borderColor: isOverdue ? "#E74C3C" : colors.border },
+          isOverdue && styles.taskItemOverdue,
         ]}
       >
         <TouchableOpacity 
@@ -172,20 +194,27 @@ export default function UpcomingScreen() {
           {isCompleted ? (
             <CheckCircle2 size={20} color="#2ECC71" />
           ) : (
-            <Circle size={20} color={colors.textSecondary} />
+            <Circle size={20} color={isOverdue ? "#E74C3C" : colors.textSecondary} />
           )}
         </TouchableOpacity>
         <View style={styles.taskContent}>
-          <Text
-            style={[
-              styles.taskTitle,
-              { color: colors.text },
-              isCompleted && styles.taskTitleCompleted,
-            ]}
-            numberOfLines={2}
-          >
-            {task.title}
-          </Text>
+          <View style={styles.taskTitleRow}>
+            <Text
+              style={[
+                styles.taskTitle,
+                { color: isOverdue ? "#E74C3C" : colors.text },
+                isCompleted && styles.taskTitleCompleted,
+              ]}
+              numberOfLines={2}
+            >
+              {task.title}
+            </Text>
+            {isOverdue && (
+              <View style={styles.overdueIndicator}>
+                <Text style={styles.overdueText}>Overdue</Text>
+              </View>
+            )}
+          </View>
           {task.labels && task.labels.length > 0 && (
             <View style={styles.taskLabels}>
               <LabelDisplay labels={task.labels} />
@@ -194,8 +223,8 @@ export default function UpcomingScreen() {
           <View style={styles.taskMeta}>
             {task.formatted_time && (
               <View style={styles.taskMetaItem}>
-                <Clock size={12} color="#FAB300" />
-                <Text style={[styles.taskMetaText, { color: "#FAB300" }]}>
+                <Clock size={12} color={isOverdue ? "#E74C3C" : "#FAB300"} />
+                <Text style={[styles.taskMetaText, { color: isOverdue ? "#E74C3C" : "#FAB300" }]}>
                   {task.formatted_time}
                 </Text>
               </View>
@@ -205,7 +234,7 @@ export default function UpcomingScreen() {
                 <Flag size={12} color={getPriorityColor(task.priority)} />
               </View>
             )}
-            {task.recurrence && task.recurrence !== "none" && (
+            {isRecurring && (
               <View style={styles.taskMetaItem}>
                 <Repeat size={12} color="#9B59B6" />
               </View>
@@ -390,13 +419,38 @@ export default function UpcomingScreen() {
         </View>
       </View>
 
-      {/* Search & Filter Bar */}
-      <TaskFilterBar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedLabelIds={filterLabelIds}
-        onLabelFilterChange={setFilterLabelIds}
-      />
+      {/* Active Filter Indicator */}
+      {hasActiveFilter && (
+        <View style={[styles.filterBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+          <View style={styles.filterInfo}>
+            <Text style={[styles.filterText, { color: colors.text }]}>Filtering by: </Text>
+            {filterPriority ? (
+              <View style={[styles.filterChip, { backgroundColor: `${getPriorityColor(filterPriority)}20` }]}>
+                <Flag size={12} color={getPriorityColor(filterPriority)} />
+                <Text style={[styles.filterChipText, { color: getPriorityColor(filterPriority) }]}>
+                  {filterPriority}
+                </Text>
+              </View>
+            ) : null}
+            {searchQuery.trim() ? (
+              <View style={[styles.filterChip, { backgroundColor: `${colors.accent}20` }]}>
+                <Text style={[styles.filterChipText, { color: colors.accent }]}>
+                  {`"${searchQuery}"`}
+                </Text>
+              </View>
+            ) : null}
+            {filterLabelId ? (
+              <View style={[styles.filterChip, { backgroundColor: `${colors.accent}20` }]}>
+                <Text style={[styles.filterChipText, { color: colors.accent }]}>Label</Text>
+              </View>
+            ) : null}
+          </View>
+          <TouchableOpacity style={styles.clearFilterBtn} onPress={clearFilters}>
+            <X size={16} color={colors.textSecondary} />
+            <Text style={[styles.clearFilterText, { color: colors.textSecondary }]}>Clear</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Days Grid */}
       <ScrollView
@@ -434,14 +488,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 28,
     borderBottomWidth: 1,
   },
   headerLeft: {
     gap: 4,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "700",
   },
   monthSelector: {
@@ -485,6 +539,7 @@ const styles = StyleSheet.create({
   daysContent: {
     paddingHorizontal: 16,
     paddingVertical: 16,
+    paddingTop: 32,
   },
   dayColumn: {
     width: 280,
@@ -594,6 +649,71 @@ const styles = StyleSheet.create({
   },
   addTaskText: {
     fontSize: 14,
+    fontWeight: "500",
+  },
+  taskItemOverdue: {
+    borderLeftWidth: 3,
+    borderLeftColor: "#E74C3C",
+  },
+  taskTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  overdueIndicator: {
+    backgroundColor: "rgba(231, 76, 60, 0.15)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  overdueText: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: "#E74C3C",
+    textTransform: "uppercase",
+  },
+  filterBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  filterInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    flex: 1,
+  },
+  filterText: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  clearFilterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  clearFilterText: {
+    fontSize: 13,
     fontWeight: "500",
   },
 });

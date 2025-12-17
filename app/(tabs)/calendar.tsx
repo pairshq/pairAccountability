@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { 
@@ -15,34 +16,41 @@ import {
   Circle, 
   CheckCircle2,
   Clock,
-  Flag,
-  Repeat,
+  Search,
 } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useTaskStore, TaskWithDetails } from "@/stores/taskStore";
 import { useResponsive } from "@/hooks/useResponsive";
-import { InlineAddTask, TaskContextMenu, LabelDisplay } from "@/components/ui";
 import { searchEventEmitter } from "@/components/ui/Sidebar";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_SHORT = ["M", "T", "W", "T", "F", "S", "S"];
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ];
 
-// Get calendar days for a month
+type ViewMode = "day" | "week" | "month" | "year";
+
+// Get calendar days for a month (Monday start)
 const getCalendarDays = (year: number, month: number) => {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const daysInMonth = lastDay.getDate();
-  const startWeekday = firstDay.getDay();
+  
+  // Get day of week (0 = Sunday, convert to Monday = 0)
+  let startWeekday = firstDay.getDay() - 1;
+  if (startWeekday < 0) startWeekday = 6;
   
   const days: (Date | null)[] = [];
   
-  // Add empty slots for days before the first day
-  for (let i = 0; i < startWeekday; i++) {
-    days.push(null);
+  // Add days from previous month
+  const prevMonth = month === 0 ? 11 : month - 1;
+  const prevYear = month === 0 ? year - 1 : year;
+  const prevMonthLastDay = new Date(prevYear, prevMonth + 1, 0).getDate();
+  for (let i = startWeekday - 1; i >= 0; i--) {
+    days.push(new Date(prevYear, prevMonth, prevMonthLastDay - i));
   }
   
   // Add all days of the month
@@ -50,17 +58,40 @@ const getCalendarDays = (year: number, month: number) => {
     days.push(new Date(year, month, i));
   }
   
+  // Add days from next month to complete the grid (6 rows)
+  const nextMonth = month === 11 ? 0 : month + 1;
+  const nextYear = month === 11 ? year + 1 : year;
+  const remainingDays = 42 - days.length; // 6 rows * 7 days
+  for (let i = 1; i <= remainingDays; i++) {
+    days.push(new Date(nextYear, nextMonth, i));
+  }
+  
   return days;
 };
 
-const getPriorityColor = (priority: string) => {
-  switch (priority) {
-    case "high": return "#E74C3C";
-    case "medium": return "#FAB300";
-    case "low": return "#6B7280";
-    default: return "#6B7280";
+// Get week days for a specific date
+const getWeekDays = (date: Date) => {
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
+  const monday = new Date(date);
+  monday.setDate(diff);
+  
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    days.push(d);
   }
+  return days;
 };
+
+// Generate hours for day/week view
+const HOURS = Array.from({ length: 24 }, (_, i) => {
+  if (i === 0) return "12am";
+  if (i < 12) return `${i}am`;
+  if (i === 12) return "12pm";
+  return `${i - 12}pm`;
+});
 
 export default function CalendarScreen() {
   const colors = useColors();
@@ -70,14 +101,15 @@ export default function CalendarScreen() {
   const { isDesktop } = useResponsive();
 
   const today = new Date();
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(today);
-  const [showAddTask, setShowAddTask] = useState(false);
+  const [currentDate, setCurrentDate] = useState(today);
+  const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterLabelIds, setFilterLabelIds] = useState<string[]>([]);
 
+  const currentMonth = currentDate.getMonth();
+  const currentYear = currentDate.getFullYear();
   const calendarDays = getCalendarDays(currentYear, currentMonth);
+  const weekDays = getWeekDays(currentDate);
 
   useEffect(() => {
     if (user) {
@@ -85,7 +117,6 @@ export default function CalendarScreen() {
     }
   }, [user]);
 
-  // Subscribe to command palette events
   useEffect(() => {
     const unsubscribe = searchEventEmitter.subscribe((data) => {
       if (data.type === "search") {
@@ -103,338 +134,364 @@ export default function CalendarScreen() {
     }
   };
 
-  const goToPrevMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
+  const navigate = (direction: number) => {
+    const newDate = new Date(currentDate);
+    if (viewMode === "day") {
+      newDate.setDate(newDate.getDate() + direction);
+    } else if (viewMode === "week") {
+      newDate.setDate(newDate.getDate() + (direction * 7));
+    } else if (viewMode === "month") {
+      newDate.setMonth(newDate.getMonth() + direction);
+    } else if (viewMode === "year") {
+      newDate.setFullYear(newDate.getFullYear() + direction);
     }
-  };
-
-  const goToNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
-    }
+    setCurrentDate(newDate);
   };
 
   const goToToday = () => {
-    setCurrentMonth(today.getMonth());
-    setCurrentYear(today.getFullYear());
-    setSelectedDate(today);
+    setCurrentDate(new Date());
   };
 
-  const handleToggleTask = async (task: TaskWithDetails) => {
-    if (task.status === "completed") {
-      await uncompleteTask(task.id);
-    } else {
-      await completeTask(task.id);
-    }
-  };
-
-  const handleTaskUpdate = () => {
-    if (user) {
-      fetchTasks(user.id);
-    }
-  };
-
-  // Filter helper for search and labels
   const filterTasks = (taskList: TaskWithDetails[]) => {
     return taskList.filter(task => {
-      // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesTitle = task.title.toLowerCase().includes(query);
         const matchesDescription = task.description?.toLowerCase().includes(query);
         if (!matchesTitle && !matchesDescription) return false;
       }
-      
-      // Label filter
       if (filterLabelIds.length > 0) {
         const taskLabelIds = task.labels?.map(l => l.id) || [];
         const hasMatchingLabel = filterLabelIds.some(id => taskLabelIds.includes(id));
         if (!hasMatchingLabel) return false;
       }
-      
       return true;
     });
   };
 
-  // Get tasks for a specific date
   const getTasksForDate = (date: Date): TaskWithDetails[] => {
     const dateStr = date.toISOString().split("T")[0];
     const dateTasks = tasks.filter((task) => task.due_date === dateStr);
     return filterTasks(dateTasks);
   };
 
-  // Get task count for a date (for calendar dots)
-  const getTaskCountForDate = (date: Date): number => {
-    return getTasksForDate(date).filter(t => t.status !== "completed").length;
-  };
-
   const isToday = (date: Date) => {
     return date.toDateString() === today.toDateString();
   };
 
-  const isSelected = (date: Date) => {
-    return selectedDate && date.toDateString() === selectedDate.toDateString();
+  const isCurrentMonth = (date: Date) => {
+    return date.getMonth() === currentMonth;
   };
 
-  const selectedDateStr = selectedDate ? selectedDate.toISOString().split("T")[0] : "";
-  const selectedTasks = selectedDate ? getTasksForDate(selectedDate) : [];
-  const pendingTasks = selectedTasks.filter(t => t.status !== "completed");
-  const completedTasks = selectedTasks.filter(t => t.status === "completed");
+  const getHeaderTitle = () => {
+    if (viewMode === "day") {
+      return `${currentDate.getDate()} ${MONTHS[currentMonth]} ${currentYear}`;
+    } else if (viewMode === "week") {
+      const start = weekDays[0];
+      const end = weekDays[6];
+      if (start.getMonth() === end.getMonth()) {
+        return `${MONTHS[start.getMonth()]} ${currentYear}`;
+      }
+      return `${MONTHS[start.getMonth()]} - ${MONTHS[end.getMonth()]} ${currentYear}`;
+    } else if (viewMode === "year") {
+      return `${currentYear}`;
+    }
+    return `${MONTHS[currentMonth]} ${currentYear}`;
+  };
+
+  // Render Month View
+  const renderMonthView = () => (
+    <View style={styles.monthGrid}>
+      {/* Weekday Headers */}
+      <View style={styles.weekdayRow}>
+        {WEEKDAYS.map((day) => (
+          <View key={day} style={styles.weekdayCell}>
+            <Text style={[styles.weekdayText, { color: colors.textSecondary }]}>{day}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Days Grid */}
+      <View style={styles.daysContainer}>
+        {calendarDays.map((date, index) => {
+          if (!date) return <View key={index} style={styles.dayCell} />;
+          
+          const dayTasks = getTasksForDate(date);
+          const isInCurrentMonth = isCurrentMonth(date);
+          const isTodayDate = isToday(date);
+          
+          return (
+            <View
+              key={index}
+              style={[
+                styles.dayCell,
+                { borderColor: colors.border },
+                !isInCurrentMonth && styles.dayCellOutside,
+              ]}
+            >
+              <View style={styles.dayCellHeader}>
+                <Text
+                  style={[
+                    styles.dayNumber,
+                    { color: isInCurrentMonth ? colors.text : colors.textSecondary },
+                    isTodayDate && styles.todayNumber,
+                  ]}
+                >
+                  {date.getDate() === 1 ? `${date.getDate()} ${MONTHS[date.getMonth()].slice(0, 3)}` : date.getDate()}
+                </Text>
+              </View>
+              <ScrollView style={styles.dayTasksContainer} showsVerticalScrollIndicator={false}>
+                {dayTasks.slice(0, 5).map((task) => (
+                  <View
+                    key={task.id}
+                    style={[
+                      styles.taskChip,
+                      { backgroundColor: task.status === "completed" ? "#2ECC71" : "#9B59B6" },
+                    ]}
+                  >
+                    <Text style={styles.taskChipText} numberOfLines={1}>
+                      {task.formatted_time && `${task.formatted_time} `}{task.title}
+                    </Text>
+                  </View>
+                ))}
+                {dayTasks.length > 5 && (
+                  <Text style={[styles.moreTasksText, { color: colors.textSecondary }]}>
+                    +{dayTasks.length - 5} more
+                  </Text>
+                )}
+              </ScrollView>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  // Render Week View
+  const renderWeekView = () => (
+    <View style={styles.weekView}>
+      {/* Header with days */}
+      <View style={styles.weekHeader}>
+        <View style={styles.timeColumn}>
+          <Text style={[styles.allDayLabel, { color: colors.textSecondary }]}>all-day</Text>
+        </View>
+        {weekDays.map((date, index) => (
+          <View key={index} style={styles.weekDayHeader}>
+            <Text style={[styles.weekDayName, { color: colors.textSecondary }]}>
+              {WEEKDAYS[index]}
+            </Text>
+            <Text
+              style={[
+                styles.weekDayNumber,
+                { color: colors.text },
+                isToday(date) && styles.todayNumber,
+              ]}
+            >
+              {date.getDate()}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Time grid */}
+      <ScrollView style={styles.weekTimeGrid} showsVerticalScrollIndicator={false}>
+        {HOURS.map((hour, hourIndex) => (
+          <View key={hourIndex} style={styles.hourRow}>
+            <View style={styles.timeColumn}>
+              <Text style={[styles.hourLabel, { color: colors.textSecondary }]}>{hour}</Text>
+            </View>
+            {weekDays.map((date, dayIndex) => {
+              const dayTasks = getTasksForDate(date);
+              const hourTasks = dayTasks.filter(task => {
+                if (!task.due_time) return false;
+                const taskHour = parseInt(task.due_time.split(":")[0]);
+                return taskHour === hourIndex;
+              });
+              
+              return (
+                <View
+                  key={dayIndex}
+                  style={[styles.hourCell, { borderColor: colors.border }]}
+                >
+                  {hourTasks.map((task) => (
+                    <View
+                      key={task.id}
+                      style={[styles.weekTaskChip, { backgroundColor: "#9B59B6" }]}
+                    >
+                      <Text style={styles.weekTaskText} numberOfLines={2}>
+                        {task.title}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+
+  // Render Day View
+  const renderDayView = () => {
+    const dayTasks = getTasksForDate(currentDate);
+    
+    return (
+      <View style={styles.dayView}>
+        <View style={styles.dayViewHeader}>
+          <Text style={[styles.dayViewTitle, { color: colors.text }]}>
+            {currentDate.toLocaleDateString("en-US", { weekday: "long" })}
+          </Text>
+        </View>
+        
+        <ScrollView style={styles.dayTimeGrid} showsVerticalScrollIndicator={false}>
+          {HOURS.map((hour, hourIndex) => {
+            const hourTasks = dayTasks.filter(task => {
+              if (!task.due_time) return false;
+              const taskHour = parseInt(task.due_time.split(":")[0]);
+              return taskHour === hourIndex;
+            });
+            
+            return (
+              <View key={hourIndex} style={styles.dayHourRow}>
+                <View style={styles.dayTimeColumn}>
+                  <Text style={[styles.hourLabel, { color: colors.textSecondary }]}>{hour}</Text>
+                </View>
+                <View style={[styles.dayHourCell, { borderColor: colors.border }]}>
+                  {hourTasks.map((task) => (
+                    <View
+                      key={task.id}
+                      style={[styles.dayTaskCard, { backgroundColor: "#9B59B6", borderColor: colors.border }]}
+                    >
+                      <Text style={styles.dayTaskTitle}>{task.title}</Text>
+                      <Text style={styles.dayTaskTime}>
+                        {task.formatted_time}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // Render Year View
+  const renderYearView = () => (
+    <View style={styles.yearGrid}>
+      {MONTHS.map((monthName, monthIndex) => {
+        const monthDays = getCalendarDays(currentYear, monthIndex);
+        
+        return (
+          <TouchableOpacity
+            key={monthIndex}
+            style={styles.yearMonth}
+            onPress={() => {
+              setCurrentDate(new Date(currentYear, monthIndex, 1));
+              setViewMode("month");
+            }}
+          >
+            <Text style={[styles.yearMonthTitle, { color: "#FAB300" }]}>{monthName}</Text>
+            <View style={styles.miniCalendar}>
+              <View style={styles.miniWeekdays}>
+                {WEEKDAYS_SHORT.map((d, i) => (
+                  <Text key={i} style={[styles.miniWeekday, { color: colors.textSecondary }]}>{d}</Text>
+                ))}
+              </View>
+              <View style={styles.miniDays}>
+                {monthDays.slice(0, 42).map((date, i) => {
+                  if (!date) return <View key={i} style={styles.miniDay} />;
+                  const isInMonth = date.getMonth() === monthIndex;
+                  const isTodayDate = isToday(date);
+                  return (
+                    <View key={i} style={styles.miniDay}>
+                      <Text
+                        style={[
+                          styles.miniDayText,
+                          { color: isInMonth ? colors.text : colors.textSecondary },
+                          isTodayDate && styles.miniDayToday,
+                        ]}
+                      >
+                        {date.getDate()}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Calendar</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>{getHeaderTitle()}</Text>
+        
+        {/* View Mode Toggles */}
+        <View style={[styles.viewModeContainer, { backgroundColor: colors.isDark ? "#2C2C2E" : "#E5E5E5" }]}>
+          {(["day", "week", "month", "year"] as ViewMode[]).map((mode) => (
+            <TouchableOpacity
+              key={mode}
+              style={[
+                styles.viewModeButton,
+                viewMode === mode && { backgroundColor: colors.isDark ? "#3C3C3E" : "#FFFFFF" },
+              ]}
+              onPress={() => setViewMode(mode)}
+            >
+              <Text
+                style={[
+                  styles.viewModeText,
+                  { color: viewMode === mode ? colors.text : colors.textSecondary },
+                ]}
+              >
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity 
-            style={[styles.todayButton, { borderColor: colors.border }]} 
+
+        {/* Navigation */}
+        <View style={styles.navContainer}>
+          <TouchableOpacity onPress={() => navigate(-1)} style={styles.navButton}>
+            <ChevronLeft size={20} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.todayButton, { backgroundColor: colors.isDark ? "#2C2C2E" : "#E5E5E5" }]}
             onPress={goToToday}
           >
             <Text style={[styles.todayButtonText, { color: colors.text }]}>Today</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigate(1)} style={styles.navButton}>
+            <ChevronRight size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
       </View>
 
+      {/* Content */}
       <ScrollView
         style={styles.content}
-        contentContainerStyle={[
-          styles.scrollContent,
-          isDesktop && styles.scrollContentDesktop,
-        ]}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={handleRefresh}
-            tintColor="#FAB300"
-          />
+          <RefreshControl refreshing={isLoading} onRefresh={handleRefresh} tintColor="#FAB300" />
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Month Navigation */}
-        <View style={styles.monthNav}>
-          <TouchableOpacity onPress={goToPrevMonth} style={styles.monthNavButton}>
-            <ChevronLeft size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.monthTitle, { color: colors.text }]}>
-            {MONTHS[currentMonth]} {currentYear}
-          </Text>
-          <TouchableOpacity onPress={goToNextMonth} style={styles.monthNavButton}>
-            <ChevronRight size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Calendar Grid */}
-        <View style={[styles.calendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {/* Weekday Headers */}
-          <View style={styles.weekdaysRow}>
-            {WEEKDAYS.map((day) => (
-              <View key={day} style={styles.weekdayCell}>
-                <Text style={[styles.weekdayText, { color: colors.textSecondary }]}>
-                  {day}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Days Grid */}
-          <View style={styles.daysGrid}>
-            {calendarDays.map((date, index) => {
-              const taskCount = date ? getTaskCountForDate(date) : 0;
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.dayCell,
-                    date && isToday(date) && styles.todayCell,
-                    date && isSelected(date) && styles.selectedCell,
-                  ]}
-                  onPress={() => {
-                    if (date) {
-                      setSelectedDate(date);
-                      setShowAddTask(false);
-                    }
-                  }}
-                  disabled={!date}
-                >
-                  {date && (
-                    <>
-                      <Text
-                        style={[
-                          styles.dayText,
-                          { color: colors.text },
-                          isToday(date) && styles.todayText,
-                          isSelected(date) && styles.selectedText,
-                        ]}
-                      >
-                        {date.getDate()}
-                      </Text>
-                      {taskCount > 0 && (
-                        <View style={styles.taskDotsContainer}>
-                          {taskCount <= 3 ? (
-                            [...Array(taskCount)].map((_, i) => (
-                              <View 
-                                key={i} 
-                                style={[
-                                  styles.taskDot,
-                                  isSelected(date) && styles.taskDotSelected,
-                                ]} 
-                              />
-                            ))
-                          ) : (
-                            <>
-                              <View style={[styles.taskDot, isSelected(date) && styles.taskDotSelected]} />
-                              <View style={[styles.taskDot, isSelected(date) && styles.taskDotSelected]} />
-                              <Text style={[styles.taskDotMore, isSelected(date) && { color: "#FFFFFF" }]}>
-                                +{taskCount - 2}
-                              </Text>
-                            </>
-                          )}
-                        </View>
-                      )}
-                    </>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Selected Day Tasks */}
-        {selectedDate && (
-          <View style={styles.selectedDaySection}>
-            <View style={styles.selectedDayHeader}>
-              <Text style={[styles.selectedDayTitle, { color: colors.text }]}>
-                {selectedDate.toLocaleDateString("en-US", { 
-                  weekday: "long",
-                  month: "long", 
-                  day: "numeric" 
-                })}
-              </Text>
-              <Text style={[styles.taskCountLabel, { color: colors.textSecondary }]}>
-                {pendingTasks.length}
-              </Text>
-            </View>
-
-            {/* Tasks List */}
-            <View style={styles.tasksList}>
-              {pendingTasks.map((task) => (
-                <View
-                  key={task.id}
-                  style={[
-                    styles.taskItem,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={styles.taskCheckbox}
-                    onPress={() => handleToggleTask(task)}
-                  >
-                    <Circle size={20} color={colors.textSecondary} />
-                  </TouchableOpacity>
-                  <View style={styles.taskContent}>
-                    <Text style={[styles.taskTitle, { color: colors.text }]} numberOfLines={1}>
-                      {task.title}
-                    </Text>
-                    {task.labels && task.labels.length > 0 && (
-                      <View style={styles.taskLabels}>
-                        <LabelDisplay labels={task.labels} />
-                      </View>
-                    )}
-                    <View style={styles.taskMeta}>
-                      {task.formatted_time && (
-                        <View style={styles.taskMetaItem}>
-                          <Clock size={12} color="#FAB300" />
-                          <Text style={[styles.taskMetaText, { color: "#FAB300" }]}>
-                            {task.formatted_time}
-                          </Text>
-                        </View>
-                      )}
-                      {task.recurrence && task.recurrence !== "none" && (
-                        <View style={styles.taskMetaItem}>
-                          <Repeat size={12} color="#9B59B6" />
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                  <TaskContextMenu task={task} onUpdate={handleTaskUpdate} />
-                </View>
-              ))}
-            </View>
-
-            {/* Inline Add Task */}
-            {showAddTask ? (
-              <InlineAddTask
-                initialDate={selectedDateStr}
-                onClose={() => setShowAddTask(false)}
-              />
-            ) : (
-            <TouchableOpacity
-              style={styles.addTaskButton}
-              onPress={() => setShowAddTask(true)}
-            >
-              <Plus size={16} color={colors.text} />
-              <Text style={[styles.addTaskButtonText, { color: colors.text }]}>Add task</Text>
-            </TouchableOpacity>
-            )}
-
-            {/* Completed Tasks */}
-            {completedTasks.length > 0 && (
-              <>
-                <Text style={[styles.completedLabel, { color: colors.textSecondary }]}>
-                  Completed ({completedTasks.length})
-                </Text>
-                {completedTasks.map((task) => (
-                  <View
-                    key={task.id}
-                    style={[
-                      styles.taskItem,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                  >
-                    <TouchableOpacity
-                      style={styles.taskCheckbox}
-                      onPress={() => handleToggleTask(task)}
-                    >
-                      <CheckCircle2 size={20} color="#2ECC71" />
-                    </TouchableOpacity>
-                    <View style={styles.taskContent}>
-                      <Text 
-                        style={[styles.taskTitle, styles.taskTitleCompleted, { color: colors.text }]} 
-                        numberOfLines={1}
-                      >
-                        {task.title}
-                      </Text>
-                    </View>
-                    <TaskContextMenu task={task} onUpdate={handleTaskUpdate} />
-                  </View>
-                ))}
-              </>
-            )}
-
-            {/* Empty State */}
-            {selectedTasks.length === 0 && !showAddTask && (
-              <View style={[styles.noTasks, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
-                <Text style={[styles.noTasksText, { color: colors.textSecondary }]}>
-                  No tasks scheduled
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+        {viewMode === "month" && renderMonthView()}
+        {viewMode === "week" && renderWeekView()}
+        {viewMode === "day" && renderDayView()}
+        {viewMode === "year" && renderYearView()}
       </ScrollView>
     </View>
   );
 }
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const styles = StyleSheet.create({
   container: {
@@ -444,216 +501,269 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-  },
-  headerLeft: {
-    flex: 1,
+    gap: 16,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: "700",
+    minWidth: 200,
   },
-  headerRight: {
+  viewModeContainer: {
+    flexDirection: "row",
+    borderRadius: 8,
+    padding: 3,
+  },
+  viewModeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  viewModeText: {
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  navContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 8,
+  },
+  navButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
   },
   todayButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   todayButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
   },
   content: {
     flex: 1,
   },
   scrollContent: {
-    padding: 24,
+    flexGrow: 1,
   },
-  scrollContentDesktop: {
-    paddingHorizontal: 32,
-    maxWidth: 700,
+  
+  // Month View
+  monthGrid: {
+    flex: 1,
   },
-  monthNav: {
+  weekdayRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  monthNavButton: {
-    width: 44,
-    height: 44,
+  weekdayCell: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  weekdayText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  daysContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    flex: 1,
+  },
+  dayCell: {
+    width: `${100 / 7}%`,
+    minHeight: 100,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    padding: 4,
+  },
+  dayCellOutside: {
+    opacity: 0.5,
+  },
+  dayCellHeader: {
+    marginBottom: 4,
+  },
+  dayNumber: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  todayNumber: {
+    color: "#FAB300",
+    fontWeight: "700",
+  },
+  dayTasksContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  taskChip: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+    marginBottom: 2,
+  },
+  taskChipText: {
+    fontSize: 10,
+    color: "#FFFFFF",
+    fontWeight: "500",
+  },
+  moreTasksText: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  // Week View
+  weekView: {
+    flex: 1,
+  },
+  weekHeader: {
+    flexDirection: "row",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  timeColumn: {
+    width: 50,
     alignItems: "center",
     justifyContent: "center",
   },
-  monthTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+  allDayLabel: {
+    fontSize: 10,
   },
-  calendarCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 24,
-  },
-  weekdaysRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
-  weekdayCell: {
+  weekDayHeader: {
     flex: 1,
     alignItems: "center",
     paddingVertical: 8,
   },
-  weekdayText: {
-    fontSize: 13,
+  weekDayName: {
+    fontSize: 11,
     fontWeight: "500",
   },
-  daysGrid: {
+  weekDayNumber: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  weekTimeGrid: {
+    flex: 1,
+  },
+  hourRow: {
+    flexDirection: "row",
+    height: 60,
+  },
+  hourLabel: {
+    fontSize: 10,
+    marginTop: -6,
+  },
+  hourCell: {
+    flex: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    padding: 2,
+  },
+  weekTaskChip: {
+    padding: 4,
+    borderRadius: 4,
+    marginBottom: 2,
+  },
+  weekTaskText: {
+    fontSize: 10,
+    color: "#FFFFFF",
+    fontWeight: "500",
+  },
+
+  // Day View
+  dayView: {
+    flex: 1,
+  },
+  dayViewHeader: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  dayViewTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  dayTimeGrid: {
+    flex: 1,
+  },
+  dayHourRow: {
+    flexDirection: "row",
+    height: 60,
+  },
+  dayTimeColumn: {
+    width: 50,
+    alignItems: "center",
+  },
+  dayHourCell: {
+    flex: 1,
+    borderBottomWidth: 1,
+    padding: 4,
+  },
+  dayTaskCard: {
+    padding: 8,
+    borderRadius: 6,
+    borderLeftWidth: 3,
+    marginBottom: 4,
+  },
+  dayTaskTitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#FFFFFF",
+  },
+  dayTaskTime: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.7)",
+    marginTop: 2,
+  },
+
+  // Year View
+  yearGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 20,
+    gap: 20,
+  },
+  yearMonth: {
+    width: `${(100 - 8) / 4}%`,
+    marginBottom: 20,
+  },
+  yearMonthTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  miniCalendar: {},
+  miniWeekdays: {
+    flexDirection: "row",
+    marginBottom: 4,
+  },
+  miniWeekday: {
+    flex: 1,
+    fontSize: 9,
+    textAlign: "center",
+  },
+  miniDays: {
     flexDirection: "row",
     flexWrap: "wrap",
   },
-  dayCell: {
-    width: "14.285%",
+  miniDay: {
+    width: `${100 / 7}%`,
     aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
   },
-  todayCell: {
-    backgroundColor: "rgba(250, 179, 0, 0.1)",
-    borderRadius: 20,
+  miniDayText: {
+    fontSize: 10,
   },
-  selectedCell: {
-    backgroundColor: "#000000",
-    borderRadius: 20,
-  },
-  dayText: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  todayText: {
+  miniDayToday: {
     color: "#FAB300",
-    fontWeight: "600",
-  },
-  selectedText: {
-    color: "#FFFFFF",
-  },
-  taskDotsContainer: {
-    position: "absolute",
-    bottom: 4,
-    flexDirection: "row",
-    gap: 2,
-    alignItems: "center",
-  },
-  taskDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#FAB300",
-  },
-  taskDotSelected: {
-    backgroundColor: "#FFFFFF",
-  },
-  taskDotMore: {
-    fontSize: 8,
-    color: "#FAB300",
-    fontWeight: "600",
-  },
-  selectedDaySection: {
-    gap: 12,
-  },
-  selectedDayHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  selectedDayTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  taskCountLabel: {
-    fontSize: 14,
-  },
-  tasksList: {
-    gap: 8,
-  },
-  taskItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  taskCheckbox: {},
-  taskContent: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontSize: 15,
-    fontWeight: "500",
-    marginBottom: 2,
-  },
-  taskTitleCompleted: {
-    textDecorationLine: "line-through",
-    opacity: 0.6,
-  },
-  taskLabels: {
-    marginBottom: 4,
-  },
-  taskMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  taskMetaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  taskMetaText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  taskCategory: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  taskCategoryText: {
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  addTaskButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 12,
-  },
-  addTaskButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  completedLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  noTasks: {
-    padding: 20,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  noTasksText: {
-    fontSize: 14,
+    fontWeight: "700",
   },
 });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,21 +9,23 @@ import {
   TextInput,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
-import { Check, X, ChevronLeft, ChevronRight } from "lucide-react-native";
+import { Check, X, ChevronLeft, ChevronRight, Users } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGoalStore } from "@/stores/goalStore";
+import { useGroupStore } from "@/stores/groupStore";
 import { Categories, Frequencies, AccountabilityTypes } from "@/lib/constants";
 
-type Step = "title" | "category" | "frequency" | "accountability";
+type Step = "title" | "category" | "frequency" | "accountability" | "group";
 
-const steps: Step[] = ["title", "category", "frequency", "accountability"];
+const baseSteps: Step[] = ["title", "category", "frequency", "accountability"];
 
 export default function CreateGoalScreen() {
   const colors = useColors();
   const router = useRouter();
   const { user } = useAuthStore();
   const { createGoal } = useGoalStore();
+  const { groups, fetchGroups } = useGroupStore();
 
   const [step, setStep] = useState<Step>("title");
   const [title, setTitle] = useState("");
@@ -31,9 +33,21 @@ export default function CreateGoalScreen() {
   const [category, setCategory] = useState<string>("");
   const [frequency, setFrequency] = useState<string>("");
   const [accountabilityType, setAccountabilityType] = useState<string>("self");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Dynamically add group step if accountability type is "group"
+  const steps: Step[] = accountabilityType === "group" 
+    ? [...baseSteps, "group"] 
+    : baseSteps;
+
   const currentStepIndex = steps.indexOf(step);
+
+  useEffect(() => {
+    if (user) {
+      fetchGroups(user.id);
+    }
+  }, [user]);
 
   const handleNext = () => {
     if (step === "title" && title.trim()) {
@@ -42,6 +56,8 @@ export default function CreateGoalScreen() {
       setStep("frequency");
     } else if (step === "frequency" && frequency) {
       setStep("accountability");
+    } else if (step === "accountability" && accountabilityType === "group") {
+      setStep("group");
     }
   };
 
@@ -49,31 +65,44 @@ export default function CreateGoalScreen() {
     if (step === "category") setStep("title");
     else if (step === "frequency") setStep("category");
     else if (step === "accountability") setStep("frequency");
+    else if (step === "group") setStep("accountability");
   };
 
   const handleCreate = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log("No user found");
+      return;
+    }
 
     setIsSubmitting(true);
     
-    const { error } = await createGoal({
+    const goalData = {
       user_id: user.id,
       title: title.trim(),
       description: description.trim() || null,
-      category: category as any,
-      frequency: frequency as any,
-      accountability_type: accountabilityType as any,
-      visibility: accountabilityType === "self" ? "private" : accountabilityType === "pair" ? "partner" : "group",
+      category: category as "personal" | "fitness" | "study" | "professional" | "financial" | "wellness",
+      frequency: frequency as "daily" | "weekly",
+      accountability_type: accountabilityType as "self" | "pair" | "group",
+      visibility: (accountabilityType === "self" ? "private" : accountabilityType === "pair" ? "partner" : "group") as "private" | "partner" | "group",
+      partner_id: null,
+      group_id: accountabilityType === "group" ? selectedGroupId : null,
       start_date: new Date().toISOString().split("T")[0],
+      end_date: null,
       is_active: true,
-    });
+    };
+    
+    console.log("Creating goal with data:", goalData);
+    
+    const { error } = await createGoal(goalData);
+
+    console.log("Create goal result - error:", error);
 
     setIsSubmitting(false);
 
     if (error) {
       Alert.alert("Error", error);
     } else {
-      router.back();
+      router.replace("/(tabs)/goals");
     }
   };
 
@@ -82,7 +111,15 @@ export default function CreateGoalScreen() {
     if (step === "category") return category.length > 0;
     if (step === "frequency") return frequency.length > 0;
     if (step === "accountability") return accountabilityType.length > 0;
+    if (step === "group") return selectedGroupId !== null;
     return false;
+  };
+
+  const isLastStep = () => {
+    if (accountabilityType === "group") {
+      return step === "group";
+    }
+    return step === "accountability";
   };
 
   return (
@@ -95,7 +132,7 @@ export default function CreateGoalScreen() {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+          <TouchableOpacity onPress={() => router.replace("/(tabs)/goals")} style={styles.closeButton}>
             <X size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>New Goal</Text>
@@ -274,7 +311,12 @@ export default function CreateGoalScreen() {
                           : colors.card,
                       },
                     ]}
-                    onPress={() => setAccountabilityType(type.id)}
+                    onPress={() => {
+                      setAccountabilityType(type.id);
+                      if (type.id !== "group") {
+                        setSelectedGroupId(null);
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <View style={styles.optionTextContent}>
@@ -295,6 +337,65 @@ export default function CreateGoalScreen() {
               </View>
             </View>
           )}
+
+          {step === "group" && (
+            <View style={styles.stepContent}>
+              <Text style={[styles.stepTitle, { color: colors.text }]}>
+                Select a group
+              </Text>
+              <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+                Choose which group to share this goal with
+              </Text>
+              
+              {groups.length === 0 ? (
+                <View style={[styles.emptyGroupsCard, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }]}>
+                  <Users size={32} color={colors.textSecondary} />
+                  <Text style={[styles.emptyGroupsText, { color: colors.textSecondary }]}>
+                    You haven't joined any groups yet.
+                  </Text>
+                  <Text style={[styles.emptyGroupsHint, { color: colors.textSecondary }]}>
+                    Create or join a group first to share goals.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.optionsList}>
+                  {groups.map((group) => (
+                    <TouchableOpacity
+                      key={group.id}
+                      style={[
+                        styles.groupOptionRow,
+                        {
+                          borderColor: selectedGroupId === group.id ? "#FAB300" : colors.border,
+                          backgroundColor: selectedGroupId === group.id
+                            ? colors.isDark ? "#1A1A0A" : "#FFFBEB"
+                            : colors.card,
+                        },
+                      ]}
+                      onPress={() => setSelectedGroupId(group.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.groupIcon, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E5E5E5" }]}>
+                        <Users size={20} color={colors.textSecondary} />
+                      </View>
+                      <View style={styles.groupOptionInfo}>
+                        <Text style={[styles.optionLabel, { color: colors.text }]}>
+                          {group.name}
+                        </Text>
+                        <Text style={[styles.groupMemberCount, { color: colors.textSecondary }]}>
+                          {group.member_count} member{group.member_count !== 1 ? "s" : ""}
+                        </Text>
+                      </View>
+                      {selectedGroupId === group.id && (
+                        <View style={styles.checkBadge}>
+                          <Check size={14} color="#000000" strokeWidth={3} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
         </ScrollView>
 
         {/* Navigation Footer */}
@@ -311,7 +412,7 @@ export default function CreateGoalScreen() {
             <View />
           )}
 
-          {step === "accountability" ? (
+          {isLastStep() ? (
             <TouchableOpacity
               style={[
                 styles.primaryButton,
@@ -522,5 +623,43 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  emptyGroupsCard: {
+    alignItems: "center",
+    padding: 32,
+    borderRadius: 16,
+    gap: 12,
+  },
+  emptyGroupsText: {
+    fontSize: 16,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  emptyGroupsHint: {
+    fontSize: 14,
+    textAlign: "center",
+  },
+  groupOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  groupIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupOptionInfo: {
+    flex: 1,
+  },
+  groupMemberCount: {
+    fontSize: 14,
+    marginTop: 2,
   },
 });

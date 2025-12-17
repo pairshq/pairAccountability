@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingVertical: 28,
     borderBottomWidth: 1,
   },
   headerLeft: {
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "700",
   },
   unreadBadge: {

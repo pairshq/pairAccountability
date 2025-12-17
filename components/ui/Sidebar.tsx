@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from "react-native";
 import { useRouter, usePathname } from "expo-router";
-import { Home, Target, Users, Calendar, Clock, Inbox, Sun, Settings, Search, Command } from "lucide-react-native";
+import { Home, Target, Users, Calendar, Clock, Inbox, Sun, Settings, Search, Command, Timer, Globe } from "lucide-react-native";
 import { Logo } from "./Logo";
 import { SettingsModal } from "./SettingsModal";
 import { CommandPalette } from "./CommandPalette";
@@ -29,13 +29,18 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
-  { label: "Dashboard", icon: Home, href: "/(tabs)", section: "main" },
-  { label: "Upcoming", icon: Clock, href: "/(tabs)/upcoming", section: "main" },
-  { label: "Today", icon: Sun, href: "/(tabs)/today", section: "main" },
-  { label: "Calendar", icon: Calendar, href: "/(tabs)/calendar", section: "main" },
-  { label: "Inbox", icon: Inbox, href: "/(tabs)/inbox", section: "main" },
+  // Workspace section
+  { label: "Dashboard", icon: Home, href: "/(tabs)", section: "workspace" },
   { label: "Goals", icon: Target, href: "/(tabs)/goals", section: "workspace" },
-  { label: "Groups", icon: Users, href: "/(tabs)/groups", section: "workspace" },
+  { label: "Upcoming", icon: Clock, href: "/(tabs)/upcoming", section: "workspace" },
+  { label: "Today", icon: Sun, href: "/(tabs)/today", section: "workspace" },
+  { label: "Calendar", icon: Calendar, href: "/(tabs)/calendar", section: "workspace" },
+  { label: "Focus Timer", icon: Timer, href: "/(tabs)/focus", section: "workspace" },
+  // Social section
+  { label: "Groups", icon: Users, href: "/(tabs)/groups", section: "social" },
+  { label: "Communities", icon: Globe, href: "/(tabs)/communities", section: "social" },
+  // Inbox section (after Social)
+  { label: "Inbox", icon: Inbox, href: "/(tabs)/inbox", section: "inbox" },
 ];
 
 export function Sidebar() {
@@ -75,6 +80,10 @@ export function Sidebar() {
     searchEventEmitter.emit({ type: "label", value: labelId });
   };
 
+  const handleSelectPriority = (priority: string) => {
+    searchEventEmitter.emit({ type: "priority", value: priority });
+  };
+
   return (
     <>
       <View style={[styles.container, { backgroundColor: colors.background, borderRightColor: colors.border }]}>
@@ -100,8 +109,11 @@ export function Sidebar() {
         {/* Navigation Items */}
         <ScrollView style={styles.navSection} showsVerticalScrollIndicator={false}>
           <View style={styles.navItems}>
-            {/* Main Section */}
-            {sidebarItems.filter(i => i.section === "main").map((item) => {
+            {/* Workspace Section */}
+            <View style={styles.sectionDivider}>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Workspace</Text>
+            </View>
+            {sidebarItems.filter(i => i.section === "workspace").map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               
@@ -128,11 +140,42 @@ export function Sidebar() {
               );
             })}
 
-            {/* Workspace Section */}
+            {/* Spacer between Workspace and Social */}
+            <View style={{ height: 16 }} />
+
+            {/* Social Section */}
             <View style={styles.sectionDivider}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Workspace</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Social</Text>
             </View>
-            {sidebarItems.filter(i => i.section === "workspace").map((item) => {
+            {sidebarItems.filter(i => i.section === "social").map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.href);
+              
+              return (
+                <TouchableOpacity
+                  key={item.href}
+                  style={[
+                    styles.navItem, 
+                    active && { backgroundColor: colors.isDark ? "#1E1E1E" : "#F5F5F5" }
+                  ]}
+                  onPress={() => router.push(item.href as any)}
+                >
+                  <View style={styles.navItemContent}>
+                    <Icon size={20} color={active ? colors.text : colors.textSecondary} strokeWidth={1.5} />
+                    <Text style={[
+                      styles.navItemText, 
+                      { color: active ? colors.text : colors.textSecondary },
+                      active && styles.navItemTextActive
+                    ]}>
+                      {item.label}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Inbox Section (after Social) */}
+            {sidebarItems.filter(i => i.section === "inbox").map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               
@@ -185,6 +228,7 @@ export function Sidebar() {
         onClose={() => setShowCommandPalette(false)}
         onSearch={handleSearch}
         onSelectLabel={handleSelectLabel}
+        onSelectPriority={handleSelectPriority}
       />
     </>
   );

@@ -120,6 +120,13 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
   const [showCreateLabel, setShowCreateLabel] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
+  
+  // Custom time input
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customHour, setCustomHour] = useState("");
+  const [customMinute, setCustomMinute] = useState("");
+  const [customPeriod, setCustomPeriod] = useState<"AM" | "PM">("AM");
+  const [customTimeError, setCustomTimeError] = useState<string | null>(null);
 
   // Fetch labels when component mounts
   useEffect(() => {
@@ -135,6 +142,44 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
     setShowRecurrencePicker(false);
     setShowLabelPicker(false);
     setShowCreateLabel(false);
+    setShowCustomTime(false);
+    setCustomTimeError(null);
+  };
+  
+  // Validate and set custom time
+  const handleCustomTimeSubmit = () => {
+    setCustomTimeError(null);
+    
+    // Validate hour
+    const hourNum = parseInt(customHour, 10);
+    if (isNaN(hourNum) || hourNum < 1 || hourNum > 12) {
+      setCustomTimeError("Hour must be between 1 and 12");
+      return;
+    }
+    
+    // Validate minute
+    const minuteNum = parseInt(customMinute, 10);
+    if (isNaN(minuteNum) || minuteNum < 0 || minuteNum > 59) {
+      setCustomTimeError("Minute must be between 0 and 59");
+      return;
+    }
+    
+    // Convert to 24-hour format
+    let hour24 = hourNum;
+    if (customPeriod === "AM") {
+      hour24 = hourNum === 12 ? 0 : hourNum;
+    } else {
+      hour24 = hourNum === 12 ? 12 : hourNum + 12;
+    }
+    
+    const timeValue = `${hour24.toString().padStart(2, "0")}:${minuteNum.toString().padStart(2, "0")}:00`;
+    setDueTime(timeValue);
+    setShowCustomTime(false);
+    setShowTimePicker(false);
+    setCustomHour("");
+    setCustomMinute("");
+    setCustomPeriod("AM");
+    setCustomTimeError(null);
   };
 
   const resetForm = () => {
@@ -161,11 +206,27 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
 
     setIsSubmitting(true);
     
+    // Adjust due date for recurring tasks if the scheduled time has already passed today
+    let adjustedDueDate = dueDate;
+    if (recurrence !== "none" && dueTime && adjustedDueDate) {
+      const now = new Date();
+      const scheduledDate = new Date(adjustedDueDate);
+      const [hours, minutes] = dueTime.split(":").map(Number);
+      scheduledDate.setHours(hours, minutes, 0, 0);
+      
+      // If the scheduled datetime is in the past, move to next occurrence
+      if (scheduledDate < now) {
+        const nextDate = new Date(adjustedDueDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+        adjustedDueDate = nextDate.toISOString().split("T")[0];
+      }
+    }
+    
     const taskData = {
       user_id: user.id,
       title: title.trim(),
       description: description.trim() || null,
-      due_date: dueDate || null,
+      due_date: adjustedDueDate || null,
       due_time: dueTime,
       priority,
       status: "pending" as const,
@@ -174,22 +235,30 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
       project_id: null,
     };
     
-    const { error, taskId } = await createTask(taskData);
+    try {
+      const { error, taskId } = await createTask(taskData);
 
-    if (error) {
+      if (error) {
+        setIsSubmitting(false);
+        Alert.alert("Error Creating Task", error);
+        return;
+      }
+
+      // Add labels to the task if any selected
+      if (taskId && selectedLabelIds.length > 0) {
+        await setLabelsForTask(taskId, selectedLabelIds);
+      }
+
+      // Refresh tasks in background
+      fetchTasks(user.id).catch(console.error);
+      
+      resetForm();
+    } catch (err) {
+      console.error("Task creation error:", err);
+      Alert.alert("Error", "Something went wrong while creating the task");
+    } finally {
       setIsSubmitting(false);
-      Alert.alert("Error Creating Task", error);
-      return;
     }
-
-    // Add labels to the task if any selected
-    if (taskId && selectedLabelIds.length > 0) {
-      await setLabelsForTask(taskId, selectedLabelIds);
-    }
-
-    await fetchTasks(user.id);
-    setIsSubmitting(false);
-    resetForm();
   };
   
   const handleCreateLabel = async () => {
@@ -586,17 +655,17 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
                   key={index}
                   style={[
                     styles.dayCell,
-                    day && isDateSelected(day) && styles.selectedDayCell,
+                    day !== null && isDateSelected(day) ? styles.selectedDayCell : undefined,
                   ]}
-                  onPress={() => day && selectCalendarDay(day)}
-                  disabled={!day}
+                  onPress={() => day !== null && selectCalendarDay(day)}
+                  disabled={day === null}
                 >
-                  {day && (
+                  {day !== null && (
                     <Text style={[
                       styles.dayText,
                       { color: colors.text },
-                      isTodayDate(day) && styles.todayText,
-                      isDateSelected(day) && styles.selectedDayText,
+                      isTodayDate(day) ? styles.todayText : undefined,
+                      isDateSelected(day) ? styles.selectedDayText : undefined,
                     ]}>
                       {day}
                     </Text>
@@ -610,7 +679,7 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
 
       {/* Time Picker Dropdown */}
       {showTimePicker && (
-        <View style={[styles.pickerDropdown, { backgroundColor: colors.isDark ? "#2C2C2E" : "#F8F8F8", borderColor: colors.border, maxHeight: 300 }]}>
+        <View style={[styles.pickerDropdown, { backgroundColor: colors.isDark ? "#2C2C2E" : "#F8F8F8", borderColor: colors.border, maxHeight: 380 }]}>
           <View style={[styles.selectedDateDisplay, { borderBottomColor: colors.border }]}>
             <Text style={[styles.selectedDateText, { color: colors.text }]}>
               {dueTime ? getTimeLabel(dueTime) : "Select time"}
@@ -621,7 +690,91 @@ export function InlineAddTask({ initialDate, onClose, autoFocus = true }: Inline
               </TouchableOpacity>
             )}
           </View>
-          <ScrollView style={{ maxHeight: 250 }} showsVerticalScrollIndicator={false}>
+          
+          {/* Custom Time Input */}
+          <TouchableOpacity
+            style={[styles.customTimeToggle, { borderBottomColor: colors.border }]}
+            onPress={() => setShowCustomTime(!showCustomTime)}
+          >
+            <View style={styles.customTimeToggleContent}>
+              <Clock size={16} color="#FAB300" />
+              <Text style={[styles.customTimeToggleText, { color: colors.text }]}>
+                {showCustomTime ? "Hide custom time" : "Enter custom time"}
+              </Text>
+            </View>
+            <Text style={{ color: "#FAB300", fontSize: 12 }}>{showCustomTime ? "▲" : "▼"}</Text>
+          </TouchableOpacity>
+          
+          {showCustomTime && (
+            <View style={[styles.customTimeContainer, { borderBottomColor: colors.border }]}>
+              <View style={styles.customTimeInputRow}>
+                <View style={styles.customTimeInputGroup}>
+                  <TextInput
+                    style={[styles.customTimeInput, { color: colors.text, borderColor: customTimeError && customTimeError.includes("Hour") ? "#E74C3C" : colors.border, backgroundColor: colors.isDark ? "#1C1C1E" : "#FFFFFF" }]}
+                    value={customHour}
+                    onChangeText={(text) => {
+                      const num = text.replace(/[^0-9]/g, "");
+                      if (num.length <= 2) setCustomHour(num);
+                    }}
+                    placeholder="HH"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                  <Text style={[styles.customTimeSeparator, { color: colors.text }]}>:</Text>
+                  <TextInput
+                    style={[styles.customTimeInput, { color: colors.text, borderColor: customTimeError && customTimeError.includes("Minute") ? "#E74C3C" : colors.border, backgroundColor: colors.isDark ? "#1C1C1E" : "#FFFFFF" }]}
+                    value={customMinute}
+                    onChangeText={(text) => {
+                      const num = text.replace(/[^0-9]/g, "");
+                      if (num.length <= 2) setCustomMinute(num);
+                    }}
+                    placeholder="MM"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                  />
+                </View>
+                
+                <View style={styles.periodToggle}>
+                  <TouchableOpacity
+                    style={[
+                      styles.periodBtn,
+                      customPeriod === "AM" && styles.periodBtnActive,
+                      { borderColor: colors.border, backgroundColor: customPeriod === "AM" ? "#FAB300" : (colors.isDark ? "#1C1C1E" : "#FFFFFF") }
+                    ]}
+                    onPress={() => setCustomPeriod("AM")}
+                  >
+                    <Text style={[styles.periodBtnText, { color: customPeriod === "AM" ? "#FFFFFF" : colors.text }]}>AM</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.periodBtn,
+                      customPeriod === "PM" && styles.periodBtnActive,
+                      { borderColor: colors.border, backgroundColor: customPeriod === "PM" ? "#FAB300" : (colors.isDark ? "#1C1C1E" : "#FFFFFF") }
+                    ]}
+                    onPress={() => setCustomPeriod("PM")}
+                  >
+                    <Text style={[styles.periodBtnText, { color: customPeriod === "PM" ? "#FFFFFF" : colors.text }]}>PM</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              {customTimeError && (
+                <Text style={styles.customTimeError}>{customTimeError}</Text>
+              )}
+              
+              <TouchableOpacity
+                style={[styles.customTimeSubmitBtn, { opacity: customHour && customMinute ? 1 : 0.5 }]}
+                onPress={handleCustomTimeSubmit}
+                disabled={!customHour || !customMinute}
+              >
+                <Text style={styles.customTimeSubmitText}>Set Time</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          <ScrollView style={{ maxHeight: showCustomTime ? 120 : 250 }} showsVerticalScrollIndicator={false}>
             {TIME_OPTIONS.map((time) => (
               <TouchableOpacity
                 key={time.value}
@@ -984,6 +1137,87 @@ const styles = StyleSheet.create({
   },
   timeOptionText: {
     fontSize: 15,
+  },
+  // Custom time input styles
+  customTimeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  customTimeToggleContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  customTimeToggleText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  customTimeContainer: {
+    padding: 12,
+    borderBottomWidth: 1,
+  },
+  customTimeInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+  },
+  customTimeInputGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  customTimeInput: {
+    width: 40,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    textAlign: "center",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  customTimeSeparator: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginHorizontal: 2,
+  },
+  periodToggle: {
+    flexDirection: "row",
+    gap: 0,
+  },
+  periodBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  periodBtnActive: {
+    borderColor: "#FAB300",
+  },
+  periodBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  customTimeError: {
+    color: "#E74C3C",
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  customTimeSubmitBtn: {
+    backgroundColor: "#FAB300",
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: "center",
+  },
+  customTimeSubmitText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   miniPicker: {
     marginHorizontal: 12,

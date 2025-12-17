@@ -18,6 +18,7 @@ import {
   Tag,
   Command,
   ArrowRight,
+  Flag,
 } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useRouter, usePathname } from "expo-router";
@@ -29,6 +30,7 @@ interface CommandPaletteProps {
   onClose: () => void;
   onSearch?: (query: string) => void;
   onSelectLabel?: (labelId: string) => void;
+  onSelectPriority?: (priority: string) => void;
 }
 
 interface RecentItem {
@@ -45,9 +47,16 @@ const NAVIGATION_ITEMS = [
   { name: "Go to Today", icon: Calendar, path: "/(tabs)/today", shortcut: ["G", "T"] },
   { name: "Go to Upcoming", icon: CalendarDays, path: "/(tabs)/upcoming", shortcut: ["G", "U"] },
   { name: "Go to Filters & Labels", icon: Tag, path: null, shortcut: ["G", "V"], action: "showLabels" },
+  { name: "Filter by Priority", icon: Flag, path: null, shortcut: ["G", "P"], action: "showPriorities" },
 ];
 
-export function CommandPalette({ visible, onClose, onSearch, onSelectLabel }: CommandPaletteProps) {
+const PRIORITY_OPTIONS = [
+  { id: "high", name: "High Priority", color: "#E74C3C" },
+  { id: "medium", name: "Medium Priority", color: "#FAB300" },
+  { id: "low", name: "Low Priority", color: "#6B7280" },
+];
+
+export function CommandPalette({ visible, onClose, onSearch, onSelectLabel, onSelectPriority }: CommandPaletteProps) {
   const colors = useColors();
   const router = useRouter();
   const pathname = usePathname();
@@ -58,6 +67,7 @@ export function CommandPalette({ visible, onClose, onSearch, onSelectLabel }: Co
   const [searchQuery, setSearchQuery] = useState("");
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   const [showLabels, setShowLabels] = useState(false);
+  const [showPriorities, setShowPriorities] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -84,6 +94,7 @@ export function CommandPalette({ visible, onClose, onSearch, onSelectLabel }: Co
     } else {
       setSearchQuery("");
       setShowLabels(false);
+      setShowPriorities(false);
     }
   }, [visible, pathname, user]);
 
@@ -104,9 +115,16 @@ export function CommandPalette({ visible, onClose, onSearch, onSelectLabel }: Co
     onClose();
   };
 
+  const handleSelectPriority = (priority: string) => {
+    onSelectPriority?.(priority);
+    onClose();
+  };
+
   const handleNavItemPress = (item: typeof NAVIGATION_ITEMS[0]) => {
     if (item.action === "showLabels") {
       setShowLabels(true);
+    } else if (item.action === "showPriorities") {
+      setShowPriorities(true);
     } else if (item.path) {
       handleNavigate(item.path);
     }
@@ -168,14 +186,35 @@ export function CommandPalette({ visible, onClose, onSearch, onSelectLabel }: Co
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {/* Labels View */}
-            {showLabels ? (
+            {/* Priorities View */}
+            {showPriorities ? (
+              <>
+                <TouchableOpacity 
+                  style={styles.backButton}
+                  onPress={() => setShowPriorities(false)}
+                >
+                  <Text style={[styles.backText, { color: colors.accent }]}>← Back</Text>
+                </TouchableOpacity>
+                
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Filter by Priority</Text>
+                {PRIORITY_OPTIONS.map((priority) => (
+                  <TouchableOpacity
+                    key={priority.id}
+                    style={styles.item}
+                    onPress={() => handleSelectPriority(priority.id)}
+                  >
+                    <Flag size={16} color={priority.color} />
+                    <Text style={[styles.itemText, { color: colors.text }]}>{priority.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            ) : showLabels ? (
               <>
                 <TouchableOpacity 
                   style={styles.backButton}
                   onPress={() => setShowLabels(false)}
                 >
-                  <Text style={[styles.backText, { color: colors.primary }]}>← Back</Text>
+                  <Text style={[styles.backText, { color: colors.accent }]}>← Back</Text>
                 </TouchableOpacity>
                 
                 <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Labels</Text>
