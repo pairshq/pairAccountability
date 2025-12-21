@@ -13,4 +13,4 @@ export { LabelPicker, LabelDisplay } from "./LabelPicker";
 export { TaskFilterBar } from "./TaskFilterBar";
 export { CommandPalette } from "./CommandPalette";
 export { Spreadsheet } from "./Spreadsheet";
-
+export { PairLoader } from "./PairLoader";

@@ -12,19 +12,23 @@ export interface Database {
       profiles: {
         Row: {
           id: string;
+          email: string;
           username: string;
           full_name: string | null;
           avatar_url: string | null;
           timezone: string;
+          onboarding_completed: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string;
+          email: string;
           username: string;
           full_name?: string | null;
           avatar_url?: string | null;
           timezone?: string;
+          onboarding_completed?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -34,6 +38,7 @@ export interface Database {
           full_name?: string | null;
           avatar_url?: string | null;
           timezone?: string;
+          onboarding_completed?: boolean;
           updated_at?: string;
         };
         Relationships: [];
@@ -194,19 +199,90 @@ export interface Database {
           group_id: string;
           user_id: string | null;
           content: string;
-          message_type: "text" | "system";
+          message_type: "text" | "system" | "image" | "video" | "audio" | "document" | "gif";
+          media_url: string | null;
+          media_type: string | null;
+          media_name: string | null;
+          media_size: number | null;
+          reply_to_id: string | null;
+          is_edited: boolean;
+          is_deleted: boolean;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           group_id: string;
           user_id?: string | null;
           content: string;
-          message_type?: "text" | "system";
+          message_type?: "text" | "system" | "image" | "video" | "audio" | "document" | "gif";
+          media_url?: string | null;
+          media_type?: string | null;
+          media_name?: string | null;
+          media_size?: number | null;
+          reply_to_id?: string | null;
+          is_edited?: boolean;
+          is_deleted?: boolean;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           content?: string;
+          is_edited?: boolean;
+          is_deleted?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      message_read_receipts: {
+        Row: {
+          id: string;
+          message_id: string;
+          user_id: string;
+          read_at: string;
+        };
+        Insert: {
+          id?: string;
+          message_id: string;
+          user_id: string;
+          read_at?: string;
+        };
+        Update: {};
+        Relationships: [];
+      };
+      message_reactions: {
+        Row: {
+          id: string;
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          created_at?: string;
+        };
+        Update: {};
+        Relationships: [];
+      };
+      typing_indicators: {
+        Row: {
+          id: string;
+          group_id: string;
+          user_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          group_id: string;
+          user_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          updated_at?: string;
         };
         Relationships: [];
       };

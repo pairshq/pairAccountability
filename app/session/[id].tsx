@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
-  ActivityIndicator,
+  Platform,
 } from "react-native";
+import { PairLoader } from "@/components/ui";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
@@ -25,10 +26,12 @@ import {
   Eye,
   Check,
   Edit3,
+  PhoneOff,
 } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useSessionStore, SessionStep } from "@/stores/sessionStore";
+import { WebRTCManager } from "@/lib/webrtc";
 
 export default function SessionRoomScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,7 +56,17 @@ export default function SessionRoomScreen() {
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
   const [isInSession, setIsInSession] = useState(false);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Video/Audio call state
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [callError, setCallError] = useState<string | null>(null);
+  const webrtcRef = useRef<WebRTCManager | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   // Load session and subscribe to updates
   useEffect(() => {
@@ -132,6 +145,132 @@ export default function SessionRoomScreen() {
       };
     }
   }, [currentSession?.status, currentSession?.start_time, currentSession?.structure]);
+
+  // Initialize WebRTC when entering session (regardless of live status)
+  useEffect(() => {
+    const initializeCall = async () => {
+      if (!id || !user?.id || !currentSession) return;
+      if (currentSession.session_mode === "virtual_presence") return; // No call for virtual presence
+      
+      // Only initialize on web with WebRTC support
+      if (Platform.OS !== "web" || typeof navigator === "undefined" || !navigator.mediaDevices) {
+        setCallError("Video/audio calls require a web browser");
+        return;
+      }
+
+      try {
+        const isVideo = currentSession.session_mode === "video";
+        
+        // Full HD 1080p constraints for maximum clarity
+        const hdVideoConstraints = {
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
+          frameRate: { ideal: 30, min: 24 },
+          facingMode: "user",
+          aspectRatio: { ideal: 16 / 9 },
+        };
+        
+        const hdAudioConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1,
+        };
+        
+        // Get local media stream with HD quality
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: isVideo ? hdVideoConstraints : false,
+          audio: hdAudioConstraints,
+        });
+        setLocalStream(stream);
+        
+        // Create WebRTC manager for peer connections
+        const manager = new WebRTCManager(id, user.id, {
+          onLocalStream: () => {},
+          onRemoteStream: (oderId, s) => {
+            setRemoteStreams((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(oderId, s);
+              return newMap;
+            });
+          },
+          onParticipantLeft: (oderId) => {
+            setRemoteStreams((prev) => {
+              const newMap = new Map(prev);
+              newMap.delete(oderId);
+              return newMap;
+            });
+          },
+        });
+
+        webrtcRef.current = manager;
+        await manager.initialize(isVideo);
+      } catch (err) {
+        console.error("Error initializing call:", err);
+        setCallError("Failed to access camera/microphone");
+      }
+    };
+
+    initializeCall();
+
+    return () => {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (webrtcRef.current) {
+        webrtcRef.current.leave();
+      }
+    };
+  }, [id, user?.id, currentSession?.session_mode]);
+
+  // Video control handlers
+  const handleToggleMute = () => {
+    if (webrtcRef.current) {
+      const muted = webrtcRef.current.toggleMute();
+      setIsMuted(muted);
+    } else if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const handleToggleVideo = () => {
+    if (webrtcRef.current) {
+      const videoOn = webrtcRef.current.toggleVideo();
+      setIsVideoOn(videoOn);
+    } else if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsVideoOn(videoTrack.enabled);
+      }
+    }
+  };
+
+  const setLocalVideoRef = (el: HTMLVideoElement | null) => {
+    localVideoRef.current = el;
+    if (el && localStream) {
+      el.srcObject = localStream;
+      el.play().catch(console.error);
+    }
+  };
+
+  const setRemoteVideoRef = (oderId: string, el: HTMLVideoElement | null) => {
+    if (el) {
+      remoteVideoRefs.current.set(oderId, el);
+      const stream = remoteStreams.get(oderId);
+      if (stream) {
+        el.srcObject = stream;
+        el.play().catch(console.error);
+      }
+    } else {
+      remoteVideoRefs.current.delete(oderId);
+    }
+  };
 
   const handleJoinSession = async () => {
     if (!id || !user?.id) return;
@@ -233,7 +372,7 @@ export default function SessionRoomScreen() {
   if (isLoadingSession || !currentSession) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <PairLoader size={64} color="#10B981" />
         <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading session...</Text>
       </View>
     );
@@ -326,110 +465,221 @@ export default function SessionRoomScreen() {
       </View>
 
       <View style={styles.mainContent}>
-        {/* Left Side - Timer & Phase */}
-        <View style={styles.timerSection}>
-          {isLive && currentPhase ? (
-            <>
-              {/* Phase Progress */}
-              <View style={styles.phaseProgress}>
-                {currentSession.structure?.map((step, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.phaseIndicator,
-                      i === currentPhaseIndex && styles.phaseIndicatorActive,
-                      i < currentPhaseIndex && styles.phaseIndicatorComplete,
-                    ]}
-                  />
-                ))}
-              </View>
-
-              {/* Current Phase */}
-              <Text style={[styles.phaseName, { color: colors.textSecondary }]}>
-                {currentPhase.name}
-              </Text>
-
-              {/* Timer */}
-              <View style={styles.timerDisplay}>
-                <Text style={[styles.timerText, { color: colors.text }]}>
-                  {formatTime(timeRemaining)}
-                </Text>
-              </View>
-
-              {/* Phase Description */}
-              <View style={styles.phaseDetails}>
-                {currentSession.structure?.map((step, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.phaseItem,
-                      i === currentPhaseIndex && styles.phaseItemActive,
-                    ]}
-                  >
-                    <View style={[
-                      styles.phaseItemDot,
-                      { backgroundColor: i === currentPhaseIndex ? "#10B981" : i < currentPhaseIndex ? "#10B981" : colors.textSecondary }
-                    ]}>
-                      {i < currentPhaseIndex && <Check size={10} color="#FFF" />}
+        {/* Left Side - Video/Audio Call */}
+        <View style={styles.videoSection}>
+          {/* Video/Audio Call UI - starts when entering session */}
+          {currentSession.session_mode !== "virtual_presence" && Platform.OS === "web" ? (
+            <View style={styles.videoCallContainer}>
+              {/* Video Grid */}
+              <View style={styles.videoGrid}>
+                {/* Local Video */}
+                {localStream && currentSession.session_mode === "video" && (
+                  <View style={[styles.videoTile, remoteStreams.size === 0 && styles.videoTileSolo]}>
+                    <video
+                      ref={setLocalVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        transform: "scaleX(-1)",
+                        borderRadius: 12,
+                        backgroundColor: "#000",
+                      }}
+                    />
+                    <View style={styles.videoLabel}>
+                      <Text style={styles.videoLabelText}>You</Text>
                     </View>
-                    <Text style={[
-                      styles.phaseItemText,
-                      { color: i === currentPhaseIndex ? colors.text : colors.textSecondary }
-                    ]}>
-                      {step.duration}m • {step.name}
-                    </Text>
+                    {isMuted && (
+                      <View style={styles.mutedIndicator}>
+                        <MicOff size={14} color="#fff" />
+                      </View>
+                    )}
+                  </View>
+                )}
+                
+                {/* Remote Videos */}
+                {Array.from(remoteStreams.entries()).map(([oderId]) => (
+                  <View key={oderId} style={styles.videoTile}>
+                    <video
+                      ref={(el) => setRemoteVideoRef(oderId, el)}
+                      autoPlay
+                      playsInline
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        borderRadius: 12,
+                        backgroundColor: "#000",
+                      }}
+                    />
                   </View>
                 ))}
+                
+                {/* Audio-only mode indicator */}
+                {currentSession.session_mode === "audio" && (
+                  <View style={styles.audioModeContainer}>
+                    <Mic size={48} color="#10B981" />
+                    <Text style={[styles.audioModeText, { color: colors.text }]}>Audio Session</Text>
+                    <Text style={[styles.audioModeSubtext, { color: colors.textSecondary }]}>
+                      {remoteStreams.size + 1} participants connected
+                    </Text>
+                  </View>
+                )}
+                
+                {/* Waiting for video to load */}
+                {!localStream && currentSession.session_mode === "video" && (
+                  <View style={styles.videoLoading}>
+                    <PairLoader size={48} color="#10B981" />
+                    <Text style={[styles.videoLoadingText, { color: colors.textSecondary }]}>
+                      Starting camera...
+                    </Text>
+                  </View>
+                )}
               </View>
-            </>
+              
+              {/* Call Controls */}
+              <View style={styles.callControls}>
+                <TouchableOpacity
+                  style={[styles.callControlBtn, isMuted && styles.callControlBtnActive]}
+                  onPress={handleToggleMute}
+                >
+                  {isMuted ? <MicOff size={20} color="#fff" /> : <Mic size={20} color="#fff" />}
+                </TouchableOpacity>
+                
+                {currentSession.session_mode === "video" && (
+                  <TouchableOpacity
+                    style={[styles.callControlBtn, !isVideoOn && styles.callControlBtnActive]}
+                    onPress={handleToggleVideo}
+                  >
+                    {isVideoOn ? <Video size={20} color="#fff" /> : <VideoOff size={20} color="#fff" />}
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {callError && (
+                <Text style={styles.callErrorText}>{callError}</Text>
+              )}
+            </View>
           ) : (
-            <View style={styles.notStarted}>
-              <Clock size={64} color={colors.textSecondary} />
-              <Text style={[styles.notStartedText, { color: colors.text }]}>
-                Session hasn't started yet
+            /* Virtual Presence Mode - No video, just show session info */
+            <View style={styles.virtualPresenceContainer}>
+              <Eye size={64} color="#10B981" />
+              <Text style={[styles.virtualPresenceTitle, { color: colors.text }]}>Virtual Presence</Text>
+              <Text style={[styles.virtualPresenceSubtitle, { color: colors.textSecondary }]}>
+                Focus together without video or audio
               </Text>
-              <Text style={[styles.notStartedSub, { color: colors.textSecondary }]}>
-                Starts at {formatTimeDisplay(currentSession.start_time)}
-              </Text>
-            </View>
-          )}
-
-          {/* Host Controls */}
-          {isHost && (
-            <View style={styles.hostControls}>
-              {!isLive ? (
-                <TouchableOpacity style={styles.startBtn} onPress={handleStartSession}>
-                  <Play size={20} color="#FFF" fill="#FFF" />
-                  <Text style={styles.startBtnText}>Start Session</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.endBtn} onPress={handleEndSession}>
-                  <Pause size={20} color="#FFF" />
-                  <Text style={styles.endBtnText}>End Session</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Join/Leave Controls for participants */}
-          {!isHost && (
-            <View style={styles.participantControls}>
-              {!isInSession ? (
-                <TouchableOpacity style={styles.joinBtn} onPress={handleJoinSession}>
-                  <Text style={styles.joinBtnText}>Join Session</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.leaveBtn} onPress={handleLeaveSession}>
-                  <LogOut size={18} color="#EF4444" />
-                  <Text style={styles.leaveBtnText}>Leave Session</Text>
-                </TouchableOpacity>
-              )}
             </View>
           )}
         </View>
 
-        {/* Right Side - Participants */}
-        <View style={[styles.participantsSection, { backgroundColor: colors.background }]}>
+        {/* Right Side - Timer & Participants */}
+        <View style={[styles.rightSidebar, { backgroundColor: colors.background, borderLeftColor: colors.border }]}>
+          {/* Timer Section */}
+          <View style={[styles.timerSidebarSection, { borderBottomColor: colors.border }]}>
+            {isLive && currentPhase ? (
+              <>
+                {/* Phase Progress */}
+                <View style={styles.phaseProgressSidebar}>
+                  {currentSession.structure?.map((step, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.phaseIndicatorSidebar,
+                        i === currentPhaseIndex && styles.phaseIndicatorActive,
+                        i < currentPhaseIndex && styles.phaseIndicatorComplete,
+                      ]}
+                    />
+                  ))}
+                </View>
+
+                {/* Current Phase */}
+                <Text style={[styles.phaseNameSidebar, { color: colors.textSecondary }]}>
+                  {currentPhase.name}
+                </Text>
+
+                {/* Timer */}
+                <View style={styles.timerDisplaySidebar}>
+                  <Text style={[styles.timerTextSidebar, { color: colors.text }]}>
+                    {formatTime(timeRemaining)}
+                  </Text>
+                </View>
+
+                {/* Phase List */}
+                <View style={styles.phaseDetailsSidebar}>
+                  {currentSession.structure?.map((step, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        styles.phaseItemSidebar,
+                        i === currentPhaseIndex && styles.phaseItemActive,
+                      ]}
+                    >
+                      <View style={[
+                        styles.phaseItemDotSidebar,
+                        { backgroundColor: i === currentPhaseIndex ? "#10B981" : i < currentPhaseIndex ? "#10B981" : colors.textSecondary }
+                      ]}>
+                        {i < currentPhaseIndex && <Check size={8} color="#FFF" />}
+                      </View>
+                      <Text style={[
+                        styles.phaseItemTextSidebar,
+                        { color: i === currentPhaseIndex ? colors.text : colors.textSecondary }
+                      ]}>
+                        {step.duration}m • {step.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <View style={styles.notStartedSidebar}>
+                <Clock size={32} color={colors.textSecondary} />
+                <Text style={[styles.notStartedTextSidebar, { color: colors.text }]}>
+                  {isLive ? "Session in progress" : "Waiting to start"}
+                </Text>
+                <Text style={[styles.notStartedSubSidebar, { color: colors.textSecondary }]}>
+                  {formatTimeDisplay(currentSession.start_time)}
+                </Text>
+              </View>
+            )}
+
+            {/* Host Controls */}
+            {isHost && (
+              <View style={styles.hostControlsSidebar}>
+                {!isLive ? (
+                  <TouchableOpacity style={styles.startBtnSidebar} onPress={handleStartSession}>
+                    <Play size={16} color="#FFF" fill="#FFF" />
+                    <Text style={styles.startBtnTextSidebar}>Start Session</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.endBtnSidebar} onPress={handleEndSession}>
+                    <Pause size={16} color="#FFF" />
+                    <Text style={styles.endBtnTextSidebar}>End Session</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Join/Leave Controls for participants */}
+            {!isHost && (
+              <View style={styles.participantControlsSidebar}>
+                {!isInSession ? (
+                  <TouchableOpacity style={styles.joinBtnSidebar} onPress={handleJoinSession}>
+                    <Text style={styles.joinBtnTextSidebar}>Join Session</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.leaveBtnSidebar} onPress={handleLeaveSession}>
+                    <LogOut size={14} color="#EF4444" />
+                    <Text style={styles.leaveBtnTextSidebar}>Leave</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+
+          {/* Participants Section */}
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Participants ({activeParticipants.length})
           </Text>
@@ -601,4 +851,50 @@ const styles = StyleSheet.create({
   intentionInput: { borderRadius: 12, padding: 16, fontSize: 15, minHeight: 80 },
   leaveWaitingBtn: { marginTop: 32, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, borderWidth: 1 },
   leaveWaitingText: { fontSize: 14, fontWeight: "500" },
+  // Video call styles
+  videoSection: { flex: 1, backgroundColor: "#0A0A0A" },
+  videoCallContainer: { flex: 1, padding: 16 },
+  videoGrid: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "center", alignItems: "center" },
+  videoTile: { width: 280, height: 210, borderRadius: 12, overflow: "hidden", position: "relative", backgroundColor: "#000" },
+  videoTileSolo: { width: "100%", maxWidth: 640, height: 480 },
+  videoLabel: { position: "absolute", bottom: 8, left: 8, backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
+  videoLabelText: { color: "#fff", fontSize: 12, fontWeight: "500" },
+  mutedIndicator: { position: "absolute", top: 8, right: 8, backgroundColor: "#EF4444", padding: 6, borderRadius: 20 },
+  videoLoading: { flex: 1, alignItems: "center", justifyContent: "center" },
+  videoLoadingText: { marginTop: 16, fontSize: 14 },
+  audioModeContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  audioModeText: { fontSize: 24, fontWeight: "600", marginTop: 16 },
+  audioModeSubtext: { fontSize: 14, marginTop: 8 },
+  virtualPresenceContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  virtualPresenceTitle: { fontSize: 24, fontWeight: "600", marginTop: 16 },
+  virtualPresenceSubtitle: { fontSize: 14, marginTop: 8, textAlign: "center" },
+  callControls: { flexDirection: "row", justifyContent: "center", gap: 16, paddingVertical: 16 },
+  callControlBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
+  callControlBtnActive: { backgroundColor: "#EF4444" },
+  callErrorText: { color: "#EF4444", fontSize: 14, textAlign: "center", marginTop: 8 },
+  // Right sidebar styles
+  rightSidebar: { width: 320, borderLeftWidth: 1 },
+  timerSidebarSection: { padding: 16, borderBottomWidth: 1, alignItems: "center" },
+  phaseProgressSidebar: { flexDirection: "row", gap: 4, marginBottom: 12 },
+  phaseIndicatorSidebar: { width: 24, height: 3, borderRadius: 2, backgroundColor: "#E5E7EB" },
+  phaseNameSidebar: { fontSize: 12, fontWeight: "500", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  timerDisplaySidebar: { marginBottom: 16 },
+  timerTextSidebar: { fontSize: 48, fontWeight: "200", fontVariant: ["tabular-nums"] },
+  phaseDetailsSidebar: { width: "100%", gap: 8 },
+  phaseItemSidebar: { flexDirection: "row", alignItems: "center", gap: 8, opacity: 0.5 },
+  phaseItemDotSidebar: { width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  phaseItemTextSidebar: { fontSize: 12 },
+  notStartedSidebar: { alignItems: "center", paddingVertical: 16 },
+  notStartedTextSidebar: { fontSize: 14, fontWeight: "600", marginTop: 8 },
+  notStartedSubSidebar: { fontSize: 12, marginTop: 4 },
+  hostControlsSidebar: { marginTop: 16, width: "100%" },
+  startBtnSidebar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#10B981", paddingVertical: 10, borderRadius: 8 },
+  startBtnTextSidebar: { color: "#FFF", fontSize: 14, fontWeight: "600" },
+  endBtnSidebar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#EF4444", paddingVertical: 10, borderRadius: 8 },
+  endBtnTextSidebar: { color: "#FFF", fontSize: 14, fontWeight: "600" },
+  participantControlsSidebar: { marginTop: 16, width: "100%" },
+  joinBtnSidebar: { backgroundColor: "#1A1A1A", paddingVertical: 10, borderRadius: 8, alignItems: "center" },
+  joinBtnTextSidebar: { color: "#FFF", fontSize: 14, fontWeight: "600" },
+  leaveBtnSidebar: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8 },
+  leaveBtnTextSidebar: { color: "#EF4444", fontSize: 13, fontWeight: "500" },
 });

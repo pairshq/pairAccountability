@@ -1,15 +1,31 @@
-import { Tabs } from "expo-router";
+import { Tabs, Redirect } from "expo-router";
 import { View, StyleSheet, Platform } from "react-native";
 import { Home, Target, Users, User, Clock, Calendar, Inbox, Sun, Timer } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
-import { Sidebar } from "@/components/ui";
+import { Sidebar, PairLoader } from "@/components/ui";
 import { useResponsive } from "@/hooks/useResponsive";
 import { useFocusModeStore } from "@/stores/focusModeStore";
+import { useAuthStore } from "@/stores/authStore";
 
 export default function TabsLayout() {
   const colors = useColors();
   const { isDesktop } = useResponsive();
   const isFullscreen = useFocusModeStore((state) => state.isFullscreen);
+  const { isAuthenticated, isLoading } = useAuthStore();
+
+  // Show loading while checking auth state
+  if (isLoading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <PairLoader size={80} color={colors.accent} />
+      </View>
+    );
+  }
+
+  // Redirect to login if not authenticated
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   // Desktop: Show sidebar layout (hide sidebar in fullscreen focus mode)
   if (isDesktop || Platform.OS === "web") {
@@ -140,6 +156,11 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   desktopContainer: {
     flex: 1,
     flexDirection: "row",

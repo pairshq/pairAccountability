@@ -2,12 +2,12 @@ import React from "react";
 import {
   TouchableOpacity,
   Text,
-  ActivityIndicator,
   StyleSheet,
   ViewStyle,
   TextStyle,
 } from "react-native";
 import { useColors } from "@/lib/useColorScheme";
+import { PairLoader } from "./PairLoader";
 
 interface ButtonProps {
   children: string;
@@ -111,7 +111,7 @@ export function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={getTextColor()} size="small" />
+        <PairLoader size={20} color={getTextColor()} />
       ) : (
         <Text
           style={[

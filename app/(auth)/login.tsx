@@ -21,13 +21,13 @@ export default function LoginScreen() {
   const router = useRouter();
   const signIn = useAuthStore((state) => state.signIn);
 
-  const [email, setEmail] = useState("");
+  const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    if (!emailOrUsername || !password) {
       setError("Please fill in all fields");
       return;
     }
@@ -35,7 +35,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     setError("");
 
-    const { error: signInError } = await signIn(email, password);
+    const { error: signInError } = await signIn(emailOrUsername.trim(), password);
 
     if (signInError) {
       setError(signInError);
@@ -45,9 +45,18 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // TODO: Implement Google sign-in
-    console.log("Google sign-in");
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError("");
+    
+    const signInWithGoogle = useAuthStore.getState().signInWithGoogle;
+    const { error: googleError } = await signInWithGoogle();
+    
+    if (googleError) {
+      setError(googleError);
+      setIsLoading(false);
+    }
+    // If successful, the OAuth flow will redirect automatically
   };
 
   return (
@@ -89,8 +98,8 @@ export default function LoginScreen() {
                   </View>
                   <CleanInput
                     placeholder="email@example.com or username"
-                    value={email}
-                    onChangeText={setEmail}
+                    value={emailOrUsername}
+                    onChangeText={setEmailOrUsername}
                     autoCapitalize="none"
                     autoComplete="email"
                     keyboardType="email-address"
@@ -101,7 +110,7 @@ export default function LoginScreen() {
                 <View style={styles.fieldContainer}>
                   <View style={styles.labelRow}>
                     <Text style={styles.label}>Password</Text>
-                    <TouchableOpacity>
+                    <TouchableOpacity onPress={() => router.push("/(auth)/forgot-password" as any)}>
                       <Text style={styles.forgotPassword}>Forgot password?</Text>
                     </TouchableOpacity>
                   </View>

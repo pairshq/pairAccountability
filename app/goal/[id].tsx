@@ -8,9 +8,9 @@ import {
   Alert,
   TouchableOpacity,
 } from "react-native";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { useLocalSearchParams, useRouter, Stack, Redirect } from "expo-router";
 import { Flame, User, Users, Trash2, ChevronLeft, Calendar, Target, TrendingUp, CheckCircle2, XCircle } from "lucide-react-native";
-import { CheckInGroup, Avatar } from "@/components/ui";
+import { CheckInGroup, Avatar, PairLoader } from "@/components/ui";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGoalStore } from "@/stores/goalStore";
@@ -21,9 +21,22 @@ export default function GoalDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const { goals, todayGoals, checkIn, deleteGoal } = useGoalStore();
   const { isDesktop } = useResponsive();
+
+  // Auth protection
+  if (authLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
+        <PairLoader size={64} color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   const [reflection, setReflection] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);

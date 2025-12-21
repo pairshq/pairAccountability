@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
-  ActivityIndicator,
   Alert,
 } from "react-native";
+import { PairLoader } from "@/components/ui";
 import { 
   Globe, 
   Users, 
@@ -293,7 +293,7 @@ export default function CommunitiesScreen() {
           <ScrollView style={styles.sessionsList} contentContainerStyle={styles.sessionsContent}
             refreshControl={<RefreshControl refreshing={isLoading} onRefresh={handleRefresh} />}>
             {isLoading ? (
-              <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 48 }} />
+              <View style={{ marginTop: 48, alignItems: "center" }}><PairLoader size={64} color="#10B981" /></View>
             ) : filteredSessions.length === 0 ? (
               <View style={styles.emptyState}>
                 <Globe size={48} color={colors.textSecondary} />

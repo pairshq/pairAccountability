@@ -11,16 +11,19 @@ import {
   Share,
   Image,
   Alert,
-  ActivityIndicator,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import { useLocalSearchParams, useRouter, Stack, Redirect } from "expo-router";
 import { Send, Copy, Users, ChevronLeft, Target, MessageCircle, UserPlus, Flame, CheckCircle2, TrendingUp, RefreshCw, Search, Phone, MoreVertical, Paperclip, Mic, Smile, X, Image as ImageIcon, Video, File, Music, Link, Plus } from "lucide-react-native";
-import { Avatar, Spreadsheet } from "@/components/ui";
+import { Avatar, Spreadsheet, PairLoader } from "@/components/ui";
 import { useColors } from "@/lib/useColorScheme";
 import { useAuthStore } from "@/stores/authStore";
 import { useGroupStore, MemberProgress } from "@/stores/groupStore";
+import { useCallStore } from "@/stores/callStore";
 import { useResponsive } from "@/hooks/useResponsive";
+import { presenceManager, UserPresence } from "@/lib/presence";
 
 type Tab = "objectives" | "chat" | "members";
 
@@ -28,8 +31,9 @@ export default function GroupDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuthStore();
   const { isDesktop } = useResponsive();
+
   const {
     currentGroup,
     groups,
@@ -37,6 +41,7 @@ export default function GroupDetailScreen() {
     memberProgress,
     sheets,
     events,
+    typingUsers,
     isLoading,
     isLoadingProgress,
     isLoadingSheets,
@@ -54,9 +59,19 @@ export default function GroupDetailScreen() {
     deleteEvent,
     sendMessage,
     subscribeToMessages,
+    subscribeToTyping,
+    setTyping,
+    uploadMedia,
     clearGroupData,
+    removeMember,
+    updateMemberRole,
+    updateGroupSettings,
+    leaveGroup,
   } = useGroupStore();
 
+  const { startCall, activeCall, isInCall, fetchActiveCall } = useCallStore();
+
+  // All useState hooks - must be before any conditional returns
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [messageText, setMessageText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -86,15 +101,62 @@ export default function GroupDetailScreen() {
   const [newEventLocation, setNewEventLocation] = useState("");
   const [newEventParticipants, setNewEventParticipants] = useState<string[]>([]);
   const [participantMode, setParticipantMode] = useState<"all" | "specific">("all");
+  const [onlineUsers, setOnlineUsers] = useState<UserPresence[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Load all sheet files for this group from database
+  // Common emojis for quick picker
+  const commonEmojis = ["😀", "😂", "😍", "🥰", "😊", "🙌", "👍", "👏", "🔥", "💪", "❤️", "💯", "🎉", "✨", "🙏", "😎", "🤔", "😅", "🥳", "💀", "😭", "🤣", "😤", "💕", "🫡", "👀", "✅", "⭐", "🚀", "💡"];
+
+  // User colors for message sender names (different color for each user)
+  const userColors = [
+    "#00A884", // Teal (WhatsApp green)
+    "#E91E63", // Pink
+    "#9C27B0", // Purple
+    "#673AB7", // Deep Purple
+    "#3F51B5", // Indigo
+    "#2196F3", // Blue
+    "#00BCD4", // Cyan
+    "#009688", // Teal
+    "#FF9800", // Orange
+    "#FF5722", // Deep Orange
+    "#795548", // Brown
+    "#607D8B", // Blue Grey
+    "#E65100", // Orange Dark
+    "#1565C0", // Blue Dark
+    "#7B1FA2", // Purple Dark
+  ];
+
+  // Get consistent color for a user based on their ID
+  const getUserColor = (userId: string) => {
+    let hash = 0;
+    for (let i = 0; i < userId.length; i++) {
+      hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return userColors[Math.abs(hash) % userColors.length];
+  };
+
+  // Check if current user is admin
+  const isCurrentUserAdmin = currentGroup?.members?.find(m => m.id === user?.id)?.role === "admin";
+
+  // Load all sheet files for this group from database - must be before conditional returns
   useEffect(() => {
     if (id) {
       fetchSheets(id);
       fetchEvents(id);
+      fetchActiveCall(id); // Check for active calls
     }
-  }, [id, fetchSheets, fetchEvents]);
+  }, [id, fetchSheets, fetchEvents, fetchActiveCall]);
+
+  // Subscribe to presence for this group
+  useEffect(() => {
+    if (id) {
+      const unsubscribe = presenceManager.subscribeToGroup(id, (users) => {
+        setOnlineUsers(users);
+      });
+      return unsubscribe;
+    }
+  }, [id]);
 
   // Create new sheet - now uses Supabase
   const handleCreateNewSheet = useCallback(async (name: string) => {
@@ -206,14 +268,48 @@ export default function GroupDetailScreen() {
       fetchMemberProgress(id);
       fetchSheets(id);
       fetchGroups(user.id);
-      const unsubscribe = subscribeToMessages(id);
-      return () => unsubscribe();
+      const unsubscribeMessages = subscribeToMessages(id);
+      const unsubscribeTyping = subscribeToTyping(id, user.id);
+      return () => {
+        unsubscribeMessages();
+        unsubscribeTyping();
+      };
     }
   }, [id, user?.id]);
+
+  // Handle typing indicator - debounced
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    
+    // Send typing indicator
+    if (id && user?.id && user && text.trim()) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      setTyping(id, user.id, user.email?.split("@")[0] || "User");
+      typingTimeoutRef.current = setTimeout(() => {
+        typingTimeoutRef.current = null;
+      }, 2000);
+    }
+  };
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
   }, [messages]);
+
+  // Auth protection - MUST be after ALL hooks
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+        <PairLoader size={64} color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !user || !id) return;
@@ -221,9 +317,23 @@ export default function GroupDetailScreen() {
     setIsSending(true);
     const text = messageText;
     setMessageText("");
+    setShowEmojiPicker(false);
     
     await sendMessage(id, user.id, text.trim());
     setIsSending(false);
+  };
+
+  // Handle Enter key to send message (web only)
+  const handleKeyPress = (e: any) => {
+    if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  // Insert emoji into message
+  const insertEmoji = (emoji: string) => {
+    setMessageText(prev => prev + emoji);
   };
 
   const handleShareInvite = async () => {
@@ -235,6 +345,196 @@ export default function GroupDetailScreen() {
       });
     } catch (error) {
       console.log(error);
+    }
+  };
+
+  // Handle image/video picker
+  const handlePickImage = async () => {
+    setShowAttachmentMenu(false);
+    
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please grant permission to access your photos.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: false,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const isVideo = asset.type === "video";
+      
+      setIsSending(true);
+      const { url, error } = await uploadMedia({
+        uri: asset.uri,
+        type: isVideo ? "video/mp4" : "image/jpeg",
+        name: `${isVideo ? "video" : "image"}_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+      });
+
+      if (error || !url) {
+        Alert.alert("Upload failed", error || "Failed to upload media");
+        setIsSending(false);
+        return;
+      }
+
+      if (id && user) {
+        await sendMessage(id, user.id, isVideo ? "Video" : "Photo", {
+          messageType: isVideo ? "video" : "image",
+          mediaUrl: url,
+          mediaType: isVideo ? "video/mp4" : "image/jpeg",
+          mediaName: asset.fileName || `${isVideo ? "video" : "image"}_${Date.now()}`,
+          mediaSize: asset.fileSize,
+        });
+      }
+      setIsSending(false);
+    }
+  };
+
+  // Handle document picker
+  const handlePickDocument = async () => {
+    setShowAttachmentMenu(false);
+    
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        
+        setIsSending(true);
+        const { url, error } = await uploadMedia({
+          uri: asset.uri,
+          type: asset.mimeType || "application/octet-stream",
+          name: asset.name,
+        });
+
+        if (error || !url) {
+          Alert.alert("Upload failed", error || "Failed to upload document");
+          setIsSending(false);
+          return;
+        }
+
+        if (id && user) {
+          await sendMessage(id, user.id, asset.name, {
+            messageType: "document",
+            mediaUrl: url,
+            mediaType: asset.mimeType || "application/octet-stream",
+            mediaName: asset.name,
+            mediaSize: asset.size,
+          });
+        }
+        setIsSending(false);
+      }
+    } catch (err) {
+      console.error("Document picker error:", err);
+      Alert.alert("Error", "Failed to pick document");
+    }
+  };
+
+  // Admin actions
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    if (!id || !isCurrentUserAdmin) return;
+    
+    Alert.alert(
+      "Remove Member",
+      `Are you sure you want to remove ${memberName} from the group?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await removeMember(id, memberId);
+            if (error) {
+              Alert.alert("Error", error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleAdmin = async (memberId: string, currentRole: string, memberName: string) => {
+    if (!id || !isCurrentUserAdmin) return;
+    
+    const newRole = currentRole === "admin" ? "member" : "admin";
+    const action = newRole === "admin" ? "promote" : "demote";
+    
+    Alert.alert(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} Member`,
+      `Are you sure you want to ${action} ${memberName} to ${newRole}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: action.charAt(0).toUpperCase() + action.slice(1),
+          onPress: async () => {
+            const { error } = await updateMemberRole(id, memberId, newRole as "admin" | "member");
+            if (error) {
+              Alert.alert("Error", error);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!id || !user) return;
+    
+    Alert.alert(
+      "Leave Group",
+      "Are you sure you want to leave this group?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            const { error } = await leaveGroup(id, user.id);
+            if (error) {
+              Alert.alert("Error", error);
+            } else {
+              router.push("/(tabs)/groups");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle starting a call
+  const handleStartCall = async (callType: "voice" | "video") => {
+    if (!id || !user) {
+      Alert.alert("Error", "Missing group or user information");
+      return;
+    }
+    
+    try {
+      console.log("Starting call:", { groupId: id, userId: user.id, callType });
+      const { error, call } = await startCall(id, user.id, callType);
+      
+      if (error) {
+        console.error("Call error:", error);
+        Alert.alert("Call Error", error);
+        return;
+      }
+      
+      // Navigate to call screen
+      if (call) {
+        console.log("Call created, navigating:", call.id);
+        router.push(`/call/${call.id}?type=${callType}&groupId=${id}` as any);
+      } else {
+        Alert.alert("Error", "Failed to create call - no call returned");
+      }
+    } catch (err) {
+      console.error("Call exception:", err);
+      Alert.alert("Error", "An unexpected error occurred while starting the call");
     }
   };
 
@@ -318,7 +618,7 @@ export default function GroupDetailScreen() {
           {/* Show loading state in content area only */}
           {isContentLoading ? (
             <View style={styles.contentLoadingContainer}>
-              <ActivityIndicator size="large" color="#7C3AED" />
+              <PairLoader size={48} color="#7C3AED" />
               <Text style={[styles.contentLoadingText, { color: colors.text }]}>Loading...</Text>
             </View>
           ) : (
@@ -338,7 +638,9 @@ export default function GroupDetailScreen() {
                 {currentGroup.name}
               </Text>
               <Text style={[styles.chatHeaderSubtitle, { color: colors.textSecondary }]}>
-                {currentGroup.member_count || 0} members, {currentGroup.online_count || 0} online
+                {currentGroup.member_count || 0} members{onlineUsers.length > 0 && (
+                  <Text style={{ color: "#22C55E" }}> • {onlineUsers.length} online</Text>
+                )}
               </Text>
             </View>
           </View>
@@ -355,10 +657,16 @@ export default function GroupDetailScreen() {
             >
               <Target size={20} color={activeTab === "objectives" ? "#00A884" : colors.textSecondary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerActionButton}>
+            <TouchableOpacity 
+              style={styles.headerActionButton}
+              onPress={() => handleStartCall("video")}
+            >
               <Video size={20} color={colors.textSecondary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerActionButton}>
+            <TouchableOpacity 
+              style={styles.headerActionButton}
+              onPress={() => handleStartCall("voice")}
+            >
               <Phone size={20} color={colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerActionButton}>
@@ -373,18 +681,47 @@ export default function GroupDetailScreen() {
           </View>
         </View>
 
+        {/* Active Call Banner */}
+        {activeCall && activeCall.group_id === id && !isInCall && (
+          <TouchableOpacity
+            style={styles.activeCallBanner}
+            onPress={() => router.push(`/call/${activeCall.id}?type=${activeCall.call_type}&groupId=${id}` as any)}
+          >
+            <View style={styles.activeCallPulse} />
+            <View style={styles.activeCallInfo}>
+              <Text style={styles.activeCallText}>
+                {activeCall.call_type === "video" ? "📹" : "📞"} Active {activeCall.call_type} call
+              </Text>
+              <Text style={styles.activeCallSubtext}>
+                {activeCall.participants?.length || 1} participant{(activeCall.participants?.length || 1) !== 1 ? "s" : ""} • Tap to join
+              </Text>
+            </View>
+            <View style={styles.joinCallButton}>
+              <Text style={styles.joinCallButtonText}>Join</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* Chat Content */}
         {activeTab === "chat" && (
           <>
             {/* Messages */}
             <ScrollView
               ref={scrollViewRef}
-              style={[styles.messagesContainer, { backgroundColor: colors.isDark ? "#0A0A0A" : "#E5DDD5" }]}
+              style={[styles.messagesContainer, { backgroundColor: colors.isDark ? "#0B141A" : "#E4DDD5" }]}
               contentContainerStyle={styles.messagesContent}
               onContentSizeChange={() => scrollViewRef.current?.scrollToEnd()}
             >
-              {/* Background Pattern */}
-              <View style={[styles.chatBackground, { opacity: colors.isDark ? 0.05 : 0.08 }]} />
+              {/* Beautiful Background Pattern - WhatsApp style doodles */}
+              <View style={[styles.chatBackgroundPattern, { opacity: colors.isDark ? 0.04 : 0.03 }]}>
+                <View style={styles.patternGrid}>
+                  {Array.from({ length: 200 }).map((_, i) => (
+                    <Text key={i} style={[styles.patternIcon, { color: colors.isDark ? "#FFFFFF" : "#000000" }]}>
+                      {["💬", "📱", "✉️", "📞", "🔔", "⭐", "💡", "🎯", "📌", "✨", "🔗", "📎", "💭", "🗨️", "📝"][i % 15]}
+                    </Text>
+                  ))}
+                </View>
+              </View>
               
               {messages.length === 0 ? (
                 <View style={styles.emptyChat}>
@@ -433,7 +770,7 @@ export default function GroupDetailScreen() {
                         >
                           <View style={[styles.messageContainer, isOwnMessage && styles.ownMessageContainer]}>
                             {!isOwnMessage && (
-                              <Text style={[styles.messageSender, { color: "#00A884" }]}>
+                              <Text style={[styles.messageSender, { color: getUserColor(message.user_id) }]}>
                                 {(message as any).user?.username}
                               </Text>
                             )}
@@ -443,11 +780,45 @@ export default function GroupDetailScreen() {
                                 isOwnMessage
                                   ? styles.ownMessageBubble
                                   : { backgroundColor: colors.isDark ? "#1F2C33" : "#FFFFFF" },
+                                (message.message_type === "image" || message.message_type === "video") && { padding: 4 },
                               ]}
                             >
-                              <Text style={[styles.messageText, { color: isOwnMessage ? "#FFFFFF" : colors.isDark ? "#E9EDEF" : "#111B21" }]}>
-                                {message.content}
-                              </Text>
+                              {/* Image Message */}
+                              {message.message_type === "image" && message.media_url && (
+                                <Image 
+                                  source={{ uri: message.media_url }} 
+                                  style={{ width: 200, height: 200, borderRadius: 8 }}
+                                  resizeMode="cover"
+                                />
+                              )}
+                              {/* Video Message */}
+                              {message.message_type === "video" && message.media_url && (
+                                <View style={{ width: 200, height: 150, borderRadius: 8, backgroundColor: "#000", alignItems: "center", justifyContent: "center" }}>
+                                  <Video size={40} color="#FFF" />
+                                  <Text style={{ color: "#FFF", marginTop: 8, fontSize: 12 }}>Video</Text>
+                                </View>
+                              )}
+                              {/* Document Message */}
+                              {message.message_type === "document" && (
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 8, padding: 8 }}>
+                                  <File size={24} color={isOwnMessage ? "#FFF" : colors.text} />
+                                  <Text style={{ color: isOwnMessage ? "#FFF" : colors.text, flex: 1 }} numberOfLines={1}>
+                                    {message.media_name || "Document"}
+                                  </Text>
+                                </View>
+                              )}
+                              {/* Text Message */}
+                              {(message.message_type === "text" || !message.message_type) && (
+                                <Text style={[styles.messageText, { color: isOwnMessage ? "#FFFFFF" : colors.isDark ? "#E9EDEF" : "#111B21" }]}>
+                                  {message.content}
+                                </Text>
+                              )}
+                              {/* Edited indicator */}
+                              {message.is_edited && (
+                                <Text style={{ fontSize: 10, color: isOwnMessage ? "rgba(255,255,255,0.5)" : colors.textSecondary, marginTop: 2 }}>
+                                  (edited)
+                                </Text>
+                              )}
                               <View style={styles.messageFooter}>
                                 <Text style={[styles.messageTime, { color: isOwnMessage ? "rgba(255,255,255,0.6)" : colors.isDark ? "rgba(233,237,239,0.6)" : "rgba(17,27,33,0.5)" }]}>
                                   {new Date(message.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
@@ -463,12 +834,29 @@ export default function GroupDetailScreen() {
               )}
             </ScrollView>
 
+            {/* Typing Indicator */}
+            {typingUsers.length > 0 && (
+              <View style={[styles.typingIndicator, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F0F2F5" }]}>
+                <Text style={[styles.typingText, { color: colors.textSecondary }]}>
+                  {typingUsers.length === 1 
+                    ? `${typingUsers[0].username} is typing...`
+                    : typingUsers.length === 2
+                    ? `${typingUsers[0].username} and ${typingUsers[1].username} are typing...`
+                    : `${typingUsers.length} people are typing...`
+                  }
+                </Text>
+              </View>
+            )}
+
             {/* Message Input */}
-            <View style={[styles.inputContainer, { backgroundColor: colors.isDark ? "#1E1E1E" : "#F0F2F5" }]}>
+            <View style={[styles.inputContainer, { backgroundColor: colors.isDark ? "#111B21" : "#F0F2F5" }]}>
               {/* Plus Button */}
               <TouchableOpacity 
                 style={styles.plusButton}
-                onPress={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                onPress={() => {
+                  setShowAttachmentMenu(!showAttachmentMenu);
+                  setShowEmojiPicker(false);
+                }}
                 activeOpacity={0.7}
               >
                 <Plus size={24} color={colors.textSecondary} />
@@ -485,15 +873,23 @@ export default function GroupDetailScreen() {
                   placeholder="Type a message"
                   placeholderTextColor={colors.textSecondary}
                   value={messageText}
-                  onChangeText={setMessageText}
+                  onChangeText={handleTextChange}
+                  onKeyPress={handleKeyPress}
                   multiline
                   maxLength={500}
                 />
               </View>
 
               {/* Emoji Button */}
-              <TouchableOpacity style={styles.emojiButton} activeOpacity={0.7}>
-                <Smile size={24} color={colors.textSecondary} />
+              <TouchableOpacity 
+                style={[styles.emojiButton, showEmojiPicker && { backgroundColor: colors.isDark ? "#2A3942" : "#E8E8E8" }]} 
+                onPress={() => {
+                  setShowEmojiPicker(!showEmojiPicker);
+                  setShowAttachmentMenu(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <Smile size={24} color={showEmojiPicker ? "#00A884" : colors.textSecondary} />
               </TouchableOpacity>
 
               {/* Mic/Send Button */}
@@ -512,12 +908,36 @@ export default function GroupDetailScreen() {
                 </TouchableOpacity>
               )}
 
+              {/* Emoji Picker */}
+              {showEmojiPicker && (
+                <View style={[styles.emojiPickerContainer, { backgroundColor: colors.isDark ? "#1F2C33" : "#FFFFFF" }]}>
+                  <View style={styles.emojiPickerHeader}>
+                    <Text style={[styles.emojiPickerTitle, { color: colors.text }]}>Emojis</Text>
+                    <TouchableOpacity onPress={() => setShowEmojiPicker(false)}>
+                      <X size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.emojiGrid}>
+                    {commonEmojis.map((emoji, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.emojiItem}
+                        onPress={() => insertEmoji(emoji)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.emojiText}>{emoji}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {/* Attachment Menu */}
               {showAttachmentMenu && (
                 <View style={[styles.attachmentMenu, { backgroundColor: colors.isDark ? "#2A2A2A" : "#FFFFFF" }]}>
                   <TouchableOpacity 
                     style={styles.attachmentMenuItem}
-                    onPress={() => setShowAttachmentMenu(false)}
+                    onPress={handlePickDocument}
                     activeOpacity={0.7}
                   >
                     <View style={[styles.attachmentIcon, { backgroundColor: "#5561C5" }]}>
@@ -527,7 +947,7 @@ export default function GroupDetailScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.attachmentMenuItem}
-                    onPress={() => setShowAttachmentMenu(false)}
+                    onPress={handlePickImage}
                     activeOpacity={0.7}
                   >
                     <View style={[styles.attachmentIcon, { backgroundColor: "#007AFF" }]}>
@@ -894,7 +1314,7 @@ export default function GroupDetailScreen() {
                   <ScrollView style={styles.eventsList} showsVerticalScrollIndicator={false}>
                     {isLoadingEvents ? (
                       <View style={styles.eventsLoading}>
-                        <ActivityIndicator size="small" color="#E85D04" />
+                        <PairLoader size={32} color="#E85D04" />
                         <Text style={[styles.eventsLoadingText, { color: colors.textSecondary }]}>Loading events...</Text>
                       </View>
                     ) : (
@@ -1028,7 +1448,7 @@ export default function GroupDetailScreen() {
                     {/* Loading state */}
                     {isLoadingSheets && (
                       <View style={styles.sheetLoadingContainer}>
-                        <ActivityIndicator size="small" color="#7C3AED" />
+                        <PairLoader size={32} color="#7C3AED" />
                         <Text style={[styles.sheetLoadingText, { color: colors.textSecondary }]}>Loading sheets...</Text>
                       </View>
                     )}
@@ -1595,30 +2015,66 @@ export default function GroupDetailScreen() {
               <View style={styles.sidebarSection}>
                 <View style={styles.sectionHeader}>
                   <Text style={[styles.sectionTitle, { color: colors.text }]}>{currentGroup.member_count} members</Text>
-                  <TouchableOpacity onPress={() => setShowGroupInfo(false)}>
-                    <X size={16} color={colors.textSecondary} />
-                  </TouchableOpacity>
                 </View>
 
-                {currentGroup.members.map((member) => (
-                  <View key={member.id} style={styles.memberItem}>
-                    {member.avatar_url ? (
-                      <Image source={{ uri: member.avatar_url }} style={styles.memberItemAvatar} />
-                    ) : (
-                      <View style={[styles.memberItemAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E0E0E0" }]}>
-                        <Text style={[styles.memberItemInitial, { color: colors.text }]}>
-                          {member.username?.[0]?.toUpperCase() || "?"}
+                {currentGroup.members.map((member) => {
+                  const isCurrentUser = member.id === user?.id;
+                  const isOnline = onlineUsers.some(u => u.oderId === member.id);
+                  return (
+                    <View key={member.id} style={styles.memberItem}>
+                      <View style={styles.memberAvatarContainer}>
+                        {member.avatar_url ? (
+                          <Image source={{ uri: member.avatar_url }} style={styles.memberItemAvatar} />
+                        ) : (
+                          <View style={[styles.memberItemAvatar, { backgroundColor: colors.isDark ? "#2A2A2A" : "#E0E0E0" }]}>
+                            <Text style={[styles.memberItemInitial, { color: colors.text }]}>
+                              {member.username?.[0]?.toUpperCase() || "?"}
+                            </Text>
+                          </View>
+                        )}
+                        {/* Online indicator */}
+                        <View style={[styles.onlineIndicator, { backgroundColor: isOnline ? "#22C55E" : "#9CA3AF" }]} />
+                      </View>
+                      <View style={styles.memberItemInfo}>
+                        <Text style={[styles.memberItemName, { color: colors.text }]}>
+                          {member.username} {isCurrentUser && "(You)"}
+                        </Text>
+                        <Text style={[styles.memberItemRole, { color: member.role === "admin" ? "#00A884" : colors.textSecondary }]}>
+                          {member.role === "admin" ? "Admin" : "Member"}{isOnline ? " • Online" : ""}
                         </Text>
                       </View>
-                    )}
-                    <View style={styles.memberItemInfo}>
-                      <Text style={[styles.memberItemName, { color: colors.text }]}>{member.username}</Text>
-                      {member.role === "admin" && (
-                        <Text style={[styles.memberItemRole, { color: colors.textSecondary }]}>admin</Text>
+                      {/* Admin controls - only show for admins and not for self */}
+                      {isCurrentUserAdmin && !isCurrentUser && (
+                        <View style={styles.memberActions}>
+                          <TouchableOpacity 
+                            style={[styles.memberActionBtn, { backgroundColor: colors.isDark ? "#2A2A2A" : "#F0F0F0" }]}
+                            onPress={() => handleToggleAdmin(member.id, member.role, member.username)}
+                          >
+                            <Text style={[styles.memberActionText, { color: colors.text }]}>
+                              {member.role === "admin" ? "Demote" : "Promote"}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={[styles.memberActionBtn, { backgroundColor: "#FF4444" }]}
+                            onPress={() => handleRemoveMember(member.id, member.username)}
+                          >
+                            <Text style={[styles.memberActionText, { color: "#FFF" }]}>Remove</Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
+              </View>
+
+              {/* Leave Group Button */}
+              <View style={styles.sidebarSection}>
+                <TouchableOpacity 
+                  style={[styles.leaveGroupButton, { backgroundColor: colors.isDark ? "#2A2A2A" : "#FFF" }]}
+                  onPress={handleLeaveGroup}
+                >
+                  <Text style={styles.leaveGroupText}>Leave Group</Text>
+                </TouchableOpacity>
               </View>
             </ScrollView>
           </View>
@@ -1895,8 +2351,36 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "#000000",
   },
+  chatBackgroundPattern: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: "hidden",
+  },
+  darkPatternOverlay: {
+    flex: 1,
+    opacity: 0.03,
+  },
+  lightPatternOverlay: {
+    flex: 1,
+    opacity: 0.025,
+  },
+  patternGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-around",
+    alignContent: "flex-start",
+    padding: 10,
+  },
+  patternIcon: {
+    fontSize: 16,
+    margin: 12,
+  },
   messagesContent: {
-    padding: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     flexGrow: 1,
   },
   emptyChat: {
@@ -1907,12 +2391,12 @@ const styles = StyleSheet.create({
   },
   dateLabelContainer: {
     alignItems: "center",
-    marginVertical: 16,
+    marginVertical: 20,
   },
   dateLabelBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -1920,8 +2404,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   dateLabelText: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   systemMessageContainer: {
     alignItems: "center",
@@ -1947,8 +2432,8 @@ const styles = StyleSheet.create({
   messageRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 8,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 4,
   },
   ownMessageRow: {
     justifyContent: "flex-end",
@@ -1965,30 +2450,32 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   messageContainer: {
-    maxWidth: "75%",
+    maxWidth: "70%",
   },
   ownMessageContainer: {
     alignItems: "flex-end",
   },
   messageSender: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
-    marginBottom: 4,
-    marginLeft: 4,
+    marginBottom: 6,
+    marginLeft: 6,
   },
   messageBubble: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderTopLeftRadius: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
     elevation: 1,
   },
   ownMessageBubble: {
     backgroundColor: "#005C4B",
-    borderTopRightRadius: 2,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 4,
   },
   messageUsername: {
     fontSize: 12,
@@ -1997,14 +2484,14 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   messageFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    marginTop: 4,
-    gap: 4,
+    marginTop: 6,
+    gap: 6,
   },
   messageTime: {
     fontSize: 11,
@@ -2012,23 +2499,24 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     position: "relative",
   },
   plusButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 22,
   },
   inputWrapper: {
     flex: 1,
     borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 44,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    minHeight: 48,
     justifyContent: "center",
   },
   inputIconButton: {
@@ -2043,10 +2531,11 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   emojiButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
+    borderRadius: 22,
   },
   inputActionButton: {
     width: 40,
@@ -2430,6 +2919,19 @@ const styles = StyleSheet.create({
   memberItemRole: {
     fontSize: 12,
   },
+  memberAvatarContainer: {
+    position: "relative",
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
   groupsSidebar: {
     width: 280,
     borderRightWidth: 1,
@@ -2544,6 +3046,45 @@ const styles = StyleSheet.create({
   },
   headerActionButtonActive: {
     backgroundColor: "rgba(0, 168, 132, 0.1)",
+  },
+  // Active Call Banner
+  activeCallBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#00A884",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  activeCallPulse: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#fff",
+  },
+  activeCallInfo: {
+    flex: 1,
+  },
+  activeCallText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  activeCallSubtext: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  joinCallButton: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  joinCallButtonText: {
+    color: "#00A884",
+    fontSize: 14,
+    fontWeight: "600",
   },
   // Objectives View Styles
   goalsContainer: {
@@ -3953,6 +4494,81 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   createEventModalButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  typingIndicator: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  typingText: {
+    fontSize: 12,
+    fontStyle: "italic",
+  },
+  // Emoji Picker Styles
+  emojiPickerContainer: {
+    position: "absolute",
+    bottom: 70,
+    right: 60,
+    width: 320,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  emojiPickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.1)",
+  },
+  emojiPickerTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  emojiGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+  },
+  emojiItem: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+  },
+  emojiText: {
+    fontSize: 24,
+  },
+  memberActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  memberActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  memberActionText: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  leaveGroupButton: {
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#FF4444",
+  },
+  leaveGroupText: {
+    color: "#FF4444",
     fontSize: 15,
     fontWeight: "600",
   },

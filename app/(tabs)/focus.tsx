@@ -7,6 +7,7 @@ import {
   Animated,
   Vibration,
   Platform,
+  ScrollView,
 } from "react-native";
 import { Audio } from "expo-av";
 import { 
@@ -23,6 +24,11 @@ import {
   Zap,
   Maximize2,
   Minimize2,
+  CloudRain,
+  Snowflake,
+  Sun,
+  Moon,
+  Palette,
 } from "lucide-react-native";
 import { useColors } from "@/lib/useColorScheme";
 import { useResponsive } from "@/hooks/useResponsive";
@@ -34,6 +40,9 @@ const STORAGE_KEY = "@pair_focus_timer_settings";
 
 type TimerMode = "focus" | "shortBreak" | "longBreak";
 
+type WeatherEffect = "none" | "rain" | "snow";
+type ThemeColor = "gold" | "purple" | "blue" | "green" | "pink" | "orange";
+
 interface TimerSettings {
   focusDuration: number;
   shortBreakDuration: number;
@@ -41,6 +50,8 @@ interface TimerSettings {
   soundEnabled: boolean;
   vibrationEnabled: boolean;
   maxSessions: number;
+  weatherEffect: WeatherEffect;
+  themeColor: ThemeColor;
 }
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -50,6 +61,126 @@ const DEFAULT_SETTINGS: TimerSettings = {
   soundEnabled: true,
   vibrationEnabled: true,
   maxSessions: 4,
+  weatherEffect: "none",
+  themeColor: "gold",
+};
+
+// Theme color configurations
+const THEME_COLORS: Record<ThemeColor, { primary: string; secondary: string; name: string }> = {
+  gold: { primary: "#FAB300", secondary: "#FFF8E7", name: "Gold" },
+  purple: { primary: "#9B59B6", secondary: "#F3E5F5", name: "Purple" },
+  blue: { primary: "#3498DB", secondary: "#E3F2FD", name: "Blue" },
+  green: { primary: "#2ECC71", secondary: "#E8F5E9", name: "Green" },
+  pink: { primary: "#E91E63", secondary: "#FCE4EC", name: "Pink" },
+  orange: { primary: "#FF5722", secondary: "#FBE9E7", name: "Orange" },
+};
+
+// Rain drop component
+const RainDrop = ({ delay, left, duration }: { delay: number; left: number; duration: number }) => {
+  const fallAnim = useRef(new Animated.Value(-20)).current;
+  
+  useEffect(() => {
+    const animate = () => {
+      fallAnim.setValue(-20);
+      Animated.timing(fallAnim, {
+        toValue: 800,
+        duration: duration,
+        useNativeDriver: true,
+        delay: delay,
+      }).start(() => animate());
+    };
+    animate();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        left: `${left}%`,
+        width: 2,
+        height: 15,
+        backgroundColor: "rgba(174, 194, 224, 0.5)",
+        borderRadius: 1,
+        transform: [{ translateY: fallAnim }],
+      }}
+    />
+  );
+};
+
+// Snow flake component
+const SnowFlake = ({ delay, left, duration }: { delay: number; left: number; duration: number }) => {
+  const fallAnim = useRef(new Animated.Value(-20)).current;
+  const swayAnim = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    const animateFall = () => {
+      fallAnim.setValue(-20);
+      Animated.timing(fallAnim, {
+        toValue: 800,
+        duration: duration,
+        useNativeDriver: true,
+        delay: delay,
+      }).start(() => animateFall());
+    };
+    
+    const animateSway = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(swayAnim, {
+            toValue: 10,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(swayAnim, {
+            toValue: -10,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    };
+    
+    animateFall();
+    animateSway();
+  }, []);
+
+  return (
+    <Animated.View
+      style={{
+        position: "absolute",
+        left: `${left}%`,
+        width: 8,
+        height: 8,
+        backgroundColor: "rgba(255, 255, 255, 0.7)",
+        borderRadius: 4,
+        transform: [{ translateY: fallAnim }, { translateX: swayAnim }],
+      }}
+    />
+  );
+};
+
+// Weather effects component
+const WeatherEffects = ({ effect }: { effect: WeatherEffect }) => {
+  if (effect === "none") return null;
+  
+  const particles = Array.from({ length: effect === "rain" ? 50 : 30 }).map((_, i) => ({
+    id: i,
+    left: Math.random() * 100,
+    delay: Math.random() * 2000,
+    duration: effect === "rain" ? 1000 + Math.random() * 500 : 3000 + Math.random() * 2000,
+  }));
+
+  return (
+    <View style={styles.weatherContainer} pointerEvents="none">
+      {particles.map((p) =>
+        effect === "rain" ? (
+          <RainDrop key={p.id} left={p.left} delay={p.delay} duration={p.duration} />
+        ) : (
+          <SnowFlake key={p.id} left={p.left} delay={p.delay} duration={p.duration} />
+        )
+      )}
+    </View>
+  );
 };
 
 const MODE_CONFIG = {
@@ -262,13 +393,19 @@ export default function FocusTimerScreen() {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
+  // Get theme color based on settings (needed for fullscreen too)
+  const themeColor = THEME_COLORS[settings.themeColor]?.primary || THEME_COLORS.gold.primary;
+
   // Fullscreen mode - only show timer section
   if (isFullscreen) {
     return (
       <View style={[styles.fullscreenContainer, { backgroundColor: colors.background }]}>
+        {/* Weather Effects in Fullscreen */}
+        <WeatherEffects effect={settings.weatherEffect} />
+
         {/* Exit fullscreen button */}
         <TouchableOpacity
-          style={styles.exitFullscreenBtn}
+          style={[styles.exitFullscreenBtn, { zIndex: 10 }]}
           onPress={() => setFullscreen(false)}
         >
           <Minimize2 size={24} color={colors.text} />
@@ -403,6 +540,9 @@ export default function FocusTimerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Weather Effects */}
+      <WeatherEffects effect={settings.weatherEffect} />
+
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={styles.headerLeft}>
@@ -708,6 +848,83 @@ export default function FocusTimerScreen() {
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* Weather Effects */}
+              <View style={styles.settingSection}>
+                <Text style={[styles.settingSectionTitle, { color: colors.text }]}>Weather Effects</Text>
+                <View style={styles.weatherOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.weatherOption,
+                      { 
+                        backgroundColor: settings.weatherEffect === "none" ? themeColor : colors.background,
+                        borderColor: settings.weatherEffect === "none" ? themeColor : colors.border,
+                      },
+                    ]}
+                    onPress={() => saveSettings({ ...settings, weatherEffect: "none" })}
+                  >
+                    <Sun size={20} color={settings.weatherEffect === "none" ? "#FFFFFF" : colors.textSecondary} />
+                    <Text style={[styles.weatherOptionText, { color: settings.weatherEffect === "none" ? "#FFFFFF" : colors.text }]}>None</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.weatherOption,
+                      { 
+                        backgroundColor: settings.weatherEffect === "rain" ? themeColor : colors.background,
+                        borderColor: settings.weatherEffect === "rain" ? themeColor : colors.border,
+                      },
+                    ]}
+                    onPress={() => saveSettings({ ...settings, weatherEffect: "rain" })}
+                  >
+                    <CloudRain size={20} color={settings.weatherEffect === "rain" ? "#FFFFFF" : colors.textSecondary} />
+                    <Text style={[styles.weatherOptionText, { color: settings.weatherEffect === "rain" ? "#FFFFFF" : colors.text }]}>Rain</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.weatherOption,
+                      { 
+                        backgroundColor: settings.weatherEffect === "snow" ? themeColor : colors.background,
+                        borderColor: settings.weatherEffect === "snow" ? themeColor : colors.border,
+                      },
+                    ]}
+                    onPress={() => saveSettings({ ...settings, weatherEffect: "snow" })}
+                  >
+                    <Snowflake size={20} color={settings.weatherEffect === "snow" ? "#FFFFFF" : colors.textSecondary} />
+                    <Text style={[styles.weatherOptionText, { color: settings.weatherEffect === "snow" ? "#FFFFFF" : colors.text }]}>Snow</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Theme Colors */}
+              <View style={styles.settingSection}>
+                <Text style={[styles.settingSectionTitle, { color: colors.text }]}>Theme Color</Text>
+                <View style={styles.themeColorOptions}>
+                  {(Object.keys(THEME_COLORS) as ThemeColor[]).map((colorKey) => {
+                    const colorConfig = THEME_COLORS[colorKey];
+                    const isSelected = settings.themeColor === colorKey;
+                    return (
+                      <TouchableOpacity
+                        key={colorKey}
+                        style={[
+                          styles.themeColorOption,
+                          { 
+                            backgroundColor: colorConfig.primary,
+                            borderWidth: isSelected ? 3 : 0,
+                            borderColor: colors.text,
+                          },
+                        ]}
+                        onPress={() => saveSettings({ ...settings, themeColor: colorKey })}
+                      >
+                        {isSelected && (
+                          <View style={styles.themeColorCheck}>
+                            <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "700" }}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
             </View>
           </View>
         </View>
@@ -947,5 +1164,68 @@ const styles = StyleSheet.create({
     gap: 8,
     position: "absolute",
     bottom: 60,
+  },
+  // Weather Effects Styles
+  weatherContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: "hidden",
+    zIndex: 1,
+  },
+  // Settings Section Styles
+  settingSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,0,0,0.1)",
+  },
+  settingSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  weatherOptions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  weatherOption: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  weatherOptionText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  themeColorOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  themeColorOption: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  themeColorCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

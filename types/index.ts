@@ -86,3 +86,68 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
+// Group types
+export interface Group {
+  id: string;
+  name: string;
+  description: string | null;
+  avatar_url: string | null;
+  invite_code: string;
+  is_private: boolean;
+  password_hash: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  group_id: string;
+  user_id: string | null;
+  content: string;
+  message_type: "text" | "system" | "image" | "video" | "audio" | "document" | "gif";
+  media_url: string | null;
+  media_type: string | null;
+  media_name: string | null;
+  media_size: number | null;
+  reply_to_id: string | null;
+  is_edited: boolean;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+  user?: {
+    id: string;
+    username: string;
+    avatar_url: string | null;
+  };
+  reply_to?: GroupMessage | null;
+  reactions?: MessageReaction[];
+  read_by?: string[];
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+  user?: {
+    id: string;
+    username: string;
+  };
+}
+
+export interface MessageReadReceipt {
+  id: string;
+  message_id: string;
+  user_id: string;
+  read_at: string;
+}
+
+export interface TypingIndicator {
+  group_id: string;
+  user_id: string;
+  username: string;
+  updated_at: string;
+}
+

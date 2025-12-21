@@ -31,9 +31,9 @@ interface SidebarItem {
 const sidebarItems: SidebarItem[] = [
   // Workspace section
   { label: "Dashboard", icon: Home, href: "/(tabs)", section: "workspace" },
+  { label: "Today", icon: Sun, href: "/(tabs)/today", section: "workspace" },
   { label: "Goals", icon: Target, href: "/(tabs)/goals", section: "workspace" },
   { label: "Upcoming", icon: Clock, href: "/(tabs)/upcoming", section: "workspace" },
-  { label: "Today", icon: Sun, href: "/(tabs)/today", section: "workspace" },
   { label: "Calendar", icon: Calendar, href: "/(tabs)/calendar", section: "workspace" },
   { label: "Focus Timer", icon: Timer, href: "/(tabs)/focus", section: "workspace" },
   // Social section

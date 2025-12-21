@@ -58,6 +58,13 @@ export interface SheetFile {
   updated_at: string;
 }
 
+// Typing indicator type
+interface TypingUser {
+  userId: string;
+  username: string;
+  updatedAt: string;
+}
+
 interface GroupState {
   groups: GroupWithDetails[];
   currentGroup: GroupWithDetails | null;
@@ -65,6 +72,7 @@ interface GroupState {
   memberProgress: MemberProgress[];
   sheets: SheetFile[];
   events: GroupEventWithParticipants[];
+  typingUsers: TypingUser[];
   isLoading: boolean;
   isLoadingProgress: boolean;
   isLoadingSheets: boolean;
@@ -79,8 +87,28 @@ interface GroupState {
   joinGroup: (inviteCode: string, userId: string, password?: string) => Promise<{ error: string | null }>;
   leaveGroup: (groupId: string, userId: string) => Promise<{ error: string | null }>;
   fetchMessages: (groupId: string) => Promise<void>;
-  sendMessage: (groupId: string, userId: string, content: string) => Promise<{ error: string | null }>;
+  sendMessage: (groupId: string, userId: string, content: string, options?: {
+    messageType?: "text" | "image" | "video" | "audio" | "document" | "gif";
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaName?: string;
+    mediaSize?: number;
+    replyToId?: string;
+  }) => Promise<{ error: string | null }>;
   subscribeToMessages: (groupId: string) => () => void;
+  // Typing indicators
+  setTyping: (groupId: string, userId: string, username: string) => Promise<void>;
+  subscribeToTyping: (groupId: string, currentUserId: string) => () => void;
+  // Reactions
+  addReaction: (messageId: string, userId: string, emoji: string) => Promise<{ error: string | null }>;
+  removeReaction: (messageId: string, userId: string, emoji: string) => Promise<{ error: string | null }>;
+  // Read receipts
+  markMessageAsRead: (messageId: string, userId: string) => Promise<void>;
+  // Media upload
+  uploadMedia: (file: { uri: string; type: string; name: string }) => Promise<{ url: string | null; error: string | null }>;
+  // Edit/Delete messages
+  editMessage: (messageId: string, newContent: string) => Promise<{ error: string | null }>;
+  deleteMessage: (messageId: string) => Promise<{ error: string | null }>;
   // Sheet actions
   fetchSheets: (groupId: string) => Promise<void>;
   createSheet: (groupId: string, userId: string, name: string) => Promise<{ error: string | null; sheet?: SheetFile }>;
@@ -91,6 +119,11 @@ interface GroupState {
   createEvent: (groupId: string, userId: string, eventData: Omit<GroupEvent, "id" | "group_id" | "created_by" | "created_at" | "updated_at">) => Promise<{ error: string | null; event?: GroupEventWithParticipants }>;
   updateEvent: (eventId: string, eventData: Partial<GroupEvent>) => Promise<{ error: string | null }>;
   deleteEvent: (eventId: string) => Promise<{ error: string | null }>;
+  // Admin actions
+  addMember: (groupId: string, userId: string) => Promise<{ error: string | null }>;
+  removeMember: (groupId: string, userId: string) => Promise<{ error: string | null }>;
+  updateMemberRole: (groupId: string, userId: string, role: "admin" | "member") => Promise<{ error: string | null }>;
+  updateGroupSettings: (groupId: string, settings: { name?: string; description?: string; avatarUrl?: string }) => Promise<{ error: string | null }>;
 }
 
 // Generate a random invite code
@@ -105,6 +138,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   memberProgress: [],
   sheets: [],
   events: [],
+  typingUsers: [],
   isLoading: false,
   isLoadingProgress: false,
   isLoadingSheets: false,
@@ -411,7 +445,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     console.log("Add member result:", { memberError });
 
     get().fetchGroups(userId);
-    return { error: null, group };
+    return { error: null, group: group as Group };
   },
 
   joinGroup: async (inviteCode, userId, password) => {
@@ -482,25 +516,53 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   fetchMessages: async (groupId) => {
     const { data: messages, error } = await supabase
       .from("group_messages")
-      .select(`
-        *,
-        user:profiles!group_messages_user_id_fkey(id, username, avatar_url)
-      `)
+      .select("*")
       .eq("group_id", groupId)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: true })
       .limit(100);
 
-    if (!error) {
-      set({ messages: messages || [] });
+    if (error) {
+      console.error("Error fetching messages:", error);
+      return;
     }
+
+    // Fetch user details for each message
+    const messagesWithUsers = await Promise.all(
+      (messages || []).map(async (msg: any) => {
+        if (msg.user_id) {
+          const { data: user } = await supabase
+            .from("profiles")
+            .select("id, username, avatar_url")
+            .eq("id", msg.user_id)
+            .single();
+          return { ...msg, user };
+        }
+        return msg;
+      })
+    );
+
+    set({ messages: messagesWithUsers as GroupMessage[] });
   },
 
-  sendMessage: async (groupId, userId, content) => {
+  sendMessage: async (groupId, userId, content, options?: {
+    messageType?: "text" | "image" | "video" | "audio" | "document" | "gif";
+    mediaUrl?: string;
+    mediaType?: string;
+    mediaName?: string;
+    mediaSize?: number;
+    replyToId?: string;
+  }) => {
     const { error } = await supabase.from("group_messages").insert({
       group_id: groupId,
       user_id: userId,
       content,
-      message_type: "text",
+      message_type: options?.messageType || "text",
+      media_url: options?.mediaUrl || null,
+      media_type: options?.mediaType || null,
+      media_name: options?.mediaName || null,
+      media_size: options?.mediaSize || null,
+      reply_to_id: options?.replyToId || null,
     });
 
     if (error) {
@@ -522,19 +584,21 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           filter: `group_id=eq.${groupId}`,
         },
         async (payload) => {
-          // Fetch the message with user details
-          const { data: message } = await supabase
-            .from("group_messages")
-            .select(`
-              *,
-              user:profiles!group_messages_user_id_fkey(id, username, avatar_url)
-            `)
-            .eq("id", payload.new.id)
-            .single();
-
-          if (message) {
-            set({ messages: [...get().messages, message] });
+          const newMsg = payload.new as any;
+          
+          // Fetch user details separately
+          let user = undefined;
+          if (newMsg.user_id) {
+            const { data: userData } = await supabase
+              .from("profiles")
+              .select("id, username, avatar_url")
+              .eq("id", newMsg.user_id)
+              .single();
+            user = userData;
           }
+
+          const message = { ...newMsg, user } as GroupMessage;
+          set({ messages: [...get().messages, message] });
         }
       )
       .subscribe();
@@ -542,6 +606,233 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return () => {
       supabase.removeChannel(channel);
     };
+  },
+
+  // Typing indicators
+  setTyping: async (groupId, userId, username) => {
+    // Use Supabase Realtime broadcast for typing indicators (ephemeral, no database storage)
+    const channel = supabase.channel(`typing-${groupId}`);
+    await channel.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId, username, updatedAt: new Date().toISOString() },
+    });
+  },
+
+  subscribeToTyping: (groupId, currentUserId) => {
+    const channel = supabase
+      .channel(`typing-${groupId}`)
+      .on("broadcast", { event: "typing" }, (payload) => {
+        const { userId, username, updatedAt } = payload.payload as any;
+        
+        // Don't show typing indicator for current user
+        if (userId === currentUserId) return;
+        
+        // Update typing users list
+        const typingUsers = get().typingUsers.filter(u => u.userId !== userId);
+        typingUsers.push({ userId, username, updatedAt });
+        set({ typingUsers });
+        
+        // Remove typing indicator after 3 seconds
+        setTimeout(() => {
+          set({
+            typingUsers: get().typingUsers.filter(u => u.userId !== userId || u.updatedAt !== updatedAt),
+          });
+        }, 3000);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  // Reactions
+  addReaction: async (messageId, userId, emoji) => {
+    const { error } = await supabase.from("message_reactions").insert({
+      message_id: messageId,
+      user_id: userId,
+      emoji,
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return { error: null };
+  },
+
+  removeReaction: async (messageId, userId, emoji) => {
+    const { error } = await supabase
+      .from("message_reactions")
+      .delete()
+      .eq("message_id", messageId)
+      .eq("user_id", userId)
+      .eq("emoji", emoji);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    return { error: null };
+  },
+
+  // Read receipts
+  markMessageAsRead: async (messageId, userId) => {
+    // Check if already marked as read
+    const { data: existing } = await supabase
+      .from("message_read_receipts")
+      .select("id")
+      .eq("message_id", messageId)
+      .eq("user_id", userId)
+      .single();
+
+    if (!existing) {
+      await supabase.from("message_read_receipts").insert({
+        message_id: messageId,
+        user_id: userId,
+      });
+    }
+  },
+
+  // Media upload
+  uploadMedia: async (file) => {
+    try {
+      const fileExt = file.name.split(".").pop() || "file";
+      const fileName = `chat-media/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      
+      const { data, error } = await supabase.storage
+        .from("chat-media")
+        .upload(fileName, blob, { contentType: file.type });
+
+      if (error) {
+        return { url: null, error: error.message };
+      }
+
+      const { data: urlData } = supabase.storage.from("chat-media").getPublicUrl(fileName);
+      return { url: urlData.publicUrl, error: null };
+    } catch (err) {
+      return { url: null, error: "Failed to upload media" };
+    }
+  },
+
+  // Edit message
+  editMessage: async (messageId, newContent) => {
+    const { error } = await supabase
+      .from("group_messages")
+      .update({
+        content: newContent,
+        is_edited: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Update local state
+    set({
+      messages: get().messages.map((m) =>
+        m.id === messageId ? { ...m, content: newContent, is_edited: true } : m
+      ),
+    });
+
+    return { error: null };
+  },
+
+  // Delete message (soft delete)
+  deleteMessage: async (messageId) => {
+    const { error } = await supabase
+      .from("group_messages")
+      .update({
+        is_deleted: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", messageId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Remove from local state
+    set({
+      messages: get().messages.filter((m) => m.id !== messageId),
+    });
+
+    return { error: null };
+  },
+
+  // Admin actions
+  addMember: async (groupId, userId) => {
+    const { error } = await supabase.from("group_members").insert({
+      group_id: groupId,
+      user_id: userId,
+      role: "member",
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Refresh group data
+    get().fetchGroup(groupId);
+    return { error: null };
+  },
+
+  removeMember: async (groupId, userId) => {
+    const { error } = await supabase
+      .from("group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Refresh group data
+    get().fetchGroup(groupId);
+    return { error: null };
+  },
+
+  updateMemberRole: async (groupId, userId, role) => {
+    const { error } = await supabase
+      .from("group_members")
+      .update({ role })
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Refresh group data
+    get().fetchGroup(groupId);
+    return { error: null };
+  },
+
+  updateGroupSettings: async (groupId, settings) => {
+    const updateData: any = {};
+    if (settings.name) updateData.name = settings.name;
+    if (settings.description !== undefined) updateData.description = settings.description;
+    if (settings.avatarUrl) updateData.avatar_url = settings.avatarUrl;
+
+    const { error } = await supabase
+      .from("groups")
+      .update(updateData)
+      .eq("id", groupId);
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Refresh group data
+    get().fetchGroup(groupId);
+    return { error: null };
   },
 
   // Sheet actions - Store sheets in Supabase database
