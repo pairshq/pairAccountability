@@ -25,6 +25,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showEmailSentMessage, setShowEmailSentMessage] = useState(false);
 
   const handleLogin = async () => {
     if (!emailOrUsername || !password) {
@@ -34,11 +35,16 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     setError("");
+    setShowEmailSentMessage(false);
 
-    const { error: signInError } = await signIn(emailOrUsername.trim(), password);
+    const result = await signIn(emailOrUsername.trim(), password);
 
-    if (signInError) {
-      setError(signInError);
+    if (result.error) {
+      setError(result.error);
+      // Show special message if confirmation email was resent
+      if (result.needsEmailConfirmation) {
+        setShowEmailSentMessage(true);
+      }
       setIsLoading(false);
     } else {
       router.replace("/(tabs)");
@@ -123,7 +129,18 @@ export default function LoginScreen() {
                   />
                 </View>
 
-                {error ? (
+                {/* Email Sent Success Message */}
+                {showEmailSentMessage && (
+                  <View style={styles.emailSentContainer}>
+                    <Text style={styles.emailSentTitle}>📧 Confirmation Email Sent!</Text>
+                    <Text style={styles.emailSentText}>
+                      Please check your inbox and spam folder, then click the link to verify your email.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Error Message (only show if not showing email sent message) */}
+                {error && !showEmailSentMessage ? (
                   <View style={styles.errorContainer}>
                     <Text style={styles.error}>{error}</Text>
                   </View>
@@ -252,6 +269,25 @@ const styles = StyleSheet.create({
   forgotPassword: {
     fontSize: 14,
     color: "#6B6B6B",
+  },
+  emailSentContainer: {
+    backgroundColor: "#2ECC7120",
+    borderWidth: 1,
+    borderColor: "#2ECC7140",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  emailSentTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#2ECC71",
+    marginBottom: 6,
+  },
+  emailSentText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    lineHeight: 20,
   },
   errorContainer: {
     backgroundColor: "#E74C3C15",

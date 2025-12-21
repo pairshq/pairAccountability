@@ -171,12 +171,44 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       email = profile.email;
     }
     
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     
     if (error) {
+      // Check if the error is due to email not being confirmed
+      if (error.message.includes("Email not confirmed")) {
+        console.log("Email not confirmed, resending confirmation email to:", email);
+        
+        // Resend the confirmation email
+        const { error: resendError } = await supabase.auth.resend({
+          type: "signup",
+          email: email,
+          options: {
+            emailRedirectTo: typeof window !== "undefined" 
+              ? `${window.location.origin}` 
+              : undefined,
+          },
+        });
+        
+        if (resendError) {
+          console.error("Failed to resend confirmation email:", resendError);
+          return { 
+            error: "Email not confirmed. Failed to resend confirmation email. Please try again later.",
+            needsEmailConfirmation: true,
+            email: email,
+          };
+        }
+        
+        console.log("Confirmation email resent successfully");
+        return { 
+          error: "Email not confirmed. We've sent you a new confirmation email. Please check your inbox and spam folder.",
+          needsEmailConfirmation: true,
+          email: email,
+        };
+      }
+      
       // Make error message more generic for security
       if (error.message.includes("Invalid login credentials")) {
         return { error: "Invalid email/username or password" };
@@ -188,6 +220,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUp: async (email, password, username, fullName) => {
+    console.log("signUp called with:", { email, username, fullName });
+    
     // Check if username is taken
     const { data: existingUser } = await supabase
       .from("profiles")
@@ -196,14 +230,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .single();
 
     if (existingUser) {
+      console.log("Username already taken:", username);
       return { error: "Username is already taken" };
     }
+
+    // Get the redirect URL for email confirmation
+    const redirectTo = typeof window !== "undefined" 
+      ? `${window.location.origin}` 
+      : undefined;
+    
+    console.log("Email confirmation redirect URL:", redirectTo);
 
     // Sign up with user metadata - profile will be created after email confirmation
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        emailRedirectTo: redirectTo,
         data: {
           username: username.toLowerCase(),
           full_name: fullName || null,
@@ -212,21 +255,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       },
     });
 
+    console.log("Supabase signUp response:", { 
+      user: data?.user?.id, 
+      email: data?.user?.email,
+      confirmed: data?.user?.email_confirmed_at,
+      identities: data?.user?.identities?.length,
+      error: error?.message 
+    });
+
     if (error) {
+      console.error("Supabase signUp error:", error);
       return { error: error.message };
     }
 
     // Check if user already exists (Supabase returns user with identities = [] for existing emails)
     // When email already exists, Supabase doesn't send a confirmation email and returns empty identities
     if (data?.user?.identities?.length === 0) {
+      console.log("User already exists (empty identities)");
       return { error: "An account with this email already exists. Please sign in instead." };
     }
 
     // Also check if user was created but email_confirmed_at is already set (existing confirmed user)
     if (data?.user?.email_confirmed_at) {
+      console.log("User already confirmed");
       return { error: "An account with this email already exists. Please sign in instead." };
     }
 
+    console.log("Signup successful - confirmation email should be sent to:", email);
     return { error: null, needsEmailConfirmation: true };
   },
 
